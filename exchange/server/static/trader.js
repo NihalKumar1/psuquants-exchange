@@ -4,6 +4,7 @@
 
 const TOKEN_KEY = "psuq-token";            // lets this browser rejoin as the same trader
 const CLICK_SIZE_KEY = "psuq-click-size";  // one click size for every market
+const BOOK_DEPTH = 10;  // price levels on each side of the book (the same as BOOK_DEPTH in views.py)
 
 let socket = null;
 let me = null;          // {trader_id, name, token} once the server welcomes us
@@ -165,29 +166,32 @@ function renderTradeOrTighten(market, mine) {
 }
 
 function renderBook(marketId, market) {
-  const tbody = document.querySelector("#book tbody");
-  if (market.bids.length === 0 && market.asks.length === 0) {
-    const text = market.tot !== null
-      ? "The book opens after the forced trade."
-      : "No orders yet. Be the first to make a market.";
-    tbody.replaceChildren(emptyRow(5, text), spreadRow(market));
-    return;
-  }
-
-  // The biggest level sets the full width of the depth bars.
+  // The book never changes shape: always BOOK_DEPTH offer slots, the divider, then BOOK_DEPTH
+  // bid slots, every row the same height (see style.css). So the best offer is always the row
+  // just above the divider and the best bid the row just below it, and the row under the mouse
+  // can't slide away between seeing it and clicking it. Empty slots are blank rows.
+  // Slot 0 on each side is the best price; offers count upwards from the divider.
   const biggest = Math.max(1, ...[...market.bids, ...market.asks].map(levelSize));
-  const rows = [];
-  // Offers above bids: highest offer at the top, best (lowest) offer just above the spread.
-  for (const level of [...market.asks].reverse()) {
-    const isBest = level.price === market.best_ask;
-    rows.push(bookRow("ask", level, biggest, isBest && (() => clickTake(marketId, "buy", level.price))));
+  const offerRows = [];
+  const bidRows = [];
+  for (let slot = 0; slot < BOOK_DEPTH; slot++) {
+    const ask = market.asks[slot];
+    const bid = market.bids[slot];
+    offerRows.unshift(ask
+      ? bookRow("ask", ask, biggest, slot === 0 && (() => clickTake(marketId, "buy", ask.price)))
+      : blankBookRow());
+    bidRows.push(bid
+      ? bookRow("bid", bid, biggest, slot === 0 && (() => clickTake(marketId, "sell", bid.price)))
+      : blankBookRow());
   }
-  rows.push(spreadRow(market));
-  for (const level of market.bids) {
-    const isBest = level.price === market.best_bid;
-    rows.push(bookRow("bid", level, biggest, isBest && (() => clickTake(marketId, "sell", level.price))));
-  }
-  tbody.replaceChildren(...rows);
+  document.querySelector("#book tbody").replaceChildren(...offerRows, spreadRow(market), ...bidRows);
+}
+
+function blankBookRow() {
+  // An empty slot: the same height as a price level, so nothing below it moves.
+  const row = tableRow(["", "", "", "", ""]);
+  row.className = "blank";
+  return row;
 }
 
 function bookRow(side, level, biggest, onClick) {
@@ -217,9 +221,15 @@ function bookRow(side, level, biggest, onClick) {
 
 function spreadRow(market) {
   // The divider between offers and bids: last price, mark, and the width of the market.
-  // Once settled, it shows the true value instead of the mark.
+  // Once settled, it shows the true value instead of the mark. When the book is empty it also
+  // says why (on the same line, so the book keeps its shape).
   const td = document.createElement("td");
   td.colSpan = 5;
+  if (market.bids.length === 0 && market.asks.length === 0) {
+    td.append(market.tot !== null
+      ? "The book opens after the forced trade.   ·   "
+      : "No orders yet. Be the first to make a market.   ·   ");
+  }
   const parts = [["Last", market.last_price]];
   if (market.settlement_value !== null) {
     parts.push(["Settled at", market.settlement_value]);
@@ -315,7 +325,11 @@ function renderTape(trades) {
 // --- Small helpers ------------------------------------------------------------------------
 
 function showMessage(text) {
-  document.getElementById("message").textContent = text;
+  // The message line is one line high; a message too long for it ends in "…" and shows in
+  // full on hover.
+  const message = document.getElementById("message");
+  message.textContent = text;
+  message.title = text;
 }
 
 function readNumber(id, what) {

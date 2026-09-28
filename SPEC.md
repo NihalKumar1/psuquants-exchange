@@ -194,6 +194,10 @@ Milestones 5 and 6 are skipped for now. **Reset** moves from M6 into M7 (without
 70. Load test pass: **p95 round trip < 750 ms**, zero errors, zero disconnects, positions sum to 0. *(Raised from 500 ms on 2026-09-28 after a local run with two markets in the room measured 606 ms, which the instructor considers fine.)*
 71. Render is set up from a **`render.yaml` Blueprint**. The instructor creates the GitHub repo and pushes.
 
+### Answered after the first Render load test (2026-09-28)
+72. The trader page's order book has a **fixed layout** so the clickable best bid and offer never move: always **10 offer slots, the divider, then 10 bid slots** (Q36's depth), every row the same height, empty slots left blank. The best offer is always directly above the divider and the best bid directly below it.
+73. When the names at one price don't fit on one line, they are **cut off with "…"**; hovering the row shows the full list (in time priority).
+
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.
 2. FastAPI server, WebSockets, join with name + room code, and a minimal trader UI for one market in continuous trading.

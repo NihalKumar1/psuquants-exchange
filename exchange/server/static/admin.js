@@ -242,7 +242,11 @@ function renderInfoDrops() {
 }
 
 function showMessage(text) {
-  document.getElementById("message").textContent = text;
+  // The message line is one line high; a message too long for it ends in "…" and shows in
+  // full on hover.
+  const message = document.getElementById("message");
+  message.textContent = text;
+  message.title = text;
 }
 
 // --- Actions ------------------------------------------------------------------------------

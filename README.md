@@ -31,8 +31,28 @@ The service is described in [render.yaml](render.yaml): free plan, Python 3.14.4
 4. Click **Deploy**. When it finishes, the service page shows its address, e.g.
    `https://psuquants-exchange.onrender.com`. Students go there, and you go to `/admin`.
 
-Every push to the repository redeploys automatically. **A redeploy wipes the running game**, so
-don't push during a meeting.
+### Updating the deployment
+
+Render redeploys by itself whenever you push to the branch it watches (the one picked when the
+Blueprint was created; the service's **Settings** page shows it).
+
+1. **Not during a meeting:** a redeploy wipes the running game and changes the room code.
+2. Run the tests first: `python -m pytest`.
+3. Commit and push:
+   ```
+   git add -A
+   git commit -m "Describe the change"
+   git push
+   ```
+4. On Render, open the service → **Events**. Wait until the new deploy says **Deploy live**
+   (a few minutes). If it says **failed**, open **Logs** to see why; the previous version keeps
+   running until a deploy succeeds.
+5. Open `/admin` and log in again if asked. The room is empty and the **room code is new**.
+6. Pages that were already open keep running the old version until they are reloaded, so
+   reload the admin page and ask anyone with the trader page open to reload it.
+
+If a push doesn't trigger a deploy (e.g. auto-deploy was turned off), use **Manual Deploy →
+Deploy latest commit** on the service page.
 
 What the free plan means for us:
 - **Everything lives in memory.** A restart, redeploy or sleep erases the game: markets,

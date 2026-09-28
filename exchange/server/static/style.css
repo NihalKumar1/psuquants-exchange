@@ -164,8 +164,11 @@ button.icon:hover { color: var(--ask); }
 #message {
   margin: 0;
   padding: 0 20px;
-  min-height: 26px;
+  height: 26px;  /* always one line, so a message never pushes the book down */
   line-height: 26px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--ask);
   font-size: 13px;
 }
@@ -289,8 +292,19 @@ tbody tr:last-child td { border-bottom: none; }
 #book { table-layout: fixed; }
 #book th:nth-child(2), #book th:nth-child(4) { width: 72px; }
 #book th:nth-child(3) { width: 104px; }
-#book td { padding: 7px 10px; font-size: 13px; }
-#book td.names { color: var(--muted); white-space: normal; line-height: 1.5; }
+/* Every row is exactly one line and the same height, so the book never changes shape and the
+   best bid and offer stay put (see renderBook in trader.js). Names that don't fit end in "…";
+   hovering the row shows them all. */
+#book tbody tr { height: 34px; }
+#book td {
+  padding: 0 10px;
+  font-size: 13px;
+  line-height: 20px;  /* well under the row height, so text never stretches a row */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#book td.names { color: var(--muted); }
 #book td.price { font: 700 14px var(--mono); }
 #book tr.bid td.price { color: var(--bid); }
 #book tr.ask td.price { color: var(--ask); }
@@ -320,7 +334,7 @@ tbody tr:last-child td { border-bottom: none; }
   text-align: center;
   font: 12px var(--mono);
   color: var(--muted);
-  padding: 9px;
+  padding: 0 9px;
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
@@ -331,7 +345,7 @@ tbody tr:last-child td { border-bottom: none; }
   .topbar, .terminal { padding-left: 16px; padding-right: 16px; }
   #book th:nth-child(2), #book th:nth-child(4) { width: 36px; }
   #book th:nth-child(3) { width: 76px; }
-  #book td { padding: 7px 5px; font-size: 12px; }
+  #book td { padding: 0 5px; font-size: 12px; }
   #book td.price { font-size: 12px; }
   .book-panel .panel-head .muted { display: none; }
 }
