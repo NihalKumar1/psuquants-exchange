@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PSU Quants Exchange</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Join screen: shown until the server welcomes us. -->
+<section id="join-screen" class="join">
+  <div class="join-card">
+    <div class="wordmark">PSU QUANTS <span>EXCHANGE</span></div>
+    <p class="tagline">Trade or Tighten</p>
+    <form id="join-form">
+      <label>Name
+        <input id="join-name" maxlength="20" autocomplete="off" placeholder="Your display name" required>
+      </label>
+      <label>Room code
+        <input id="join-code" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="0000" required>
+      </label>
+      <button type="submit" class="primary">Join the market</button>
+      <p id="join-error" class="error"></p>
+    </form>
+  </div>
+</section>
+
+<!-- Trading screen. -->
+<section id="trade-screen" hidden>
+  <header class="topbar">
+    <div class="wordmark">PSU QUANTS <span>EXCHANGE</span></div>
+    <div class="market-head">
+      <span id="market-status" class="pill"></span>
+      <h1 id="market-title"></h1>
+      <span id="market-info" class="muted"></span>
+    </div>
+    <div class="me">
+      <div class="stat"><small>Trader</small><b id="my-name"></b></div>
+      <div class="stat"><small>Total PnL</small><b id="total-pnl"></b></div>
+      <label class="stat click-size"><small>Click size</small>
+        <input id="click-size" type="number" min="1" step="1">
+      </label>
+    </div>
+  </header>
+  <p id="message"></p>
+
+  <main class="terminal">
+    <!-- Left: entering orders and my own numbers. -->
+    <div class="column">
+      <!-- Trade or Tighten: shown instead of order entry while the market is opening. -->
+      <section id="tot-panel" class="panel" hidden>
+        <h2>Trade or Tighten</h2>
+
+        <!-- 1. Width auction -->
+        <div id="tot-auction">
+          <p class="tot-line">Best width <b id="tot-best-width"></b> <span id="tot-best-holder" class="muted"></span></p>
+          <form id="width-form" class="entry single">
+            <input id="width-input" type="number" min="0" placeholder="Your width">
+            <button type="submit" class="primary">Submit width</button>
+          </form>
+          <p class="hint">The narrowest width makes the market. Width is in price units and must beat the best.</p>
+        </div>
+
+        <!-- 2 and 3. The market maker and their quote -->
+        <p id="tot-mm-line" class="tot-line"></p>
+        <form id="mm-quote-form" class="entry quote">
+          <input id="mm-bid" type="number" placeholder="Bid">
+          <input id="mm-ask" type="number" placeholder="Offer">
+          <button type="submit" class="primary">Submit quote (final)</button>
+        </form>
+
+        <!-- 3. The forced trade -->
+        <div id="tot-forced">
+          <p class="tot-line">Time left <b data-countdown=""></b>  ·  Size <b id="tot-size"></b></p>
+          <div id="forced-buttons" class="forced-buttons">
+            <button id="choose-buy" type="button" class="buy">Buy at <span id="forced-ask"></span></button>
+            <button id="choose-sell" type="button" class="sell">Sell at <span id="forced-bid"></span></button>
+          </div>
+          <p id="forced-note" class="hint"></p>
+        </div>
+      </section>
+
+      <section id="entry-panel" class="panel">
+        <h2>Order entry</h2>
+        <form id="buy-form" class="entry">
+          <input id="buy-price" type="number" placeholder="Bid price">
+          <input id="buy-size" type="number" min="1" step="1" placeholder="Size">
+          <button type="submit" class="buy">Bid</button>
+        </form>
+        <form id="sell-form" class="entry">
+          <input id="sell-price" type="number" placeholder="Offer price">
+          <input id="sell-size" type="number" min="1" step="1" placeholder="Size">
+          <button type="submit" class="sell">Offer</button>
+        </form>
+        <h3>Two-sided quote</h3>
+        <form id="quote-form" class="entry quote">
+          <input id="quote-bid" type="number" placeholder="Bid">
+          <input id="quote-ask" type="number" placeholder="Offer">
+          <input id="quote-size" type="number" min="1" step="1" placeholder="Size">
+          <button type="submit" class="primary">Quote</button>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>My numbers</h2>
+        <div class="tiles">
+          <div class="tile"><small>Position</small><b id="my-position"></b></div>
+          <div class="tile"><small>Realized</small><b id="my-realized"></b></div>
+          <div class="tile"><small>MTM</small><b id="my-unrealized"></b></div>
+          <div class="tile"><small>Total</small><b id="my-total"></b></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>My orders</h2>
+        <table id="my-orders">
+          <thead><tr><th>Side</th><th class="num">Price</th><th class="num">Size</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="cancel-all">
+          <button id="cancel-all-market" type="button" class="ghost">Cancel all (this market)</button>
+          <button id="cancel-all-everywhere" type="button" class="ghost">Cancel all (all markets)</button>
+        </div>
+      </section>
+    </div>
+
+    <!-- Centre: the order book. -->
+    <section class="panel book-panel">
+      <div class="panel-head">
+        <h2>Order book</h2>
+        <span class="muted">Click the best bid or offer to trade</span>
+      </div>
+      <table id="book">
+        <thead>
+          <tr><th>Bidders</th><th class="num">Size</th><th class="price">Price</th><th class="num">Size</th><th class="right">Offerers</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- Right: everyone's positions and the trade tape. -->
+    <div class="column">
+      <section class="panel">
+        <h2>Positions</h2>
+        <table id="positions">
+          <thead><tr><th>Trader</th><th class="num">Position</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <section class="panel">
+        <h2>Trades</h2>
+        <div class="scroll">
+          <table id="tape">
+            <thead><tr><th>Time</th><th>Buyer</th><th>Seller</th><th class="num">Price</th><th class="num">Size</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+</section>
+
+<script src="/static/common.js"></script>
+<script src="/static/trader.js"></script>
+</body>
+</html>

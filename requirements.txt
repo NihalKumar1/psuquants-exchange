@@ -1,0 +1,5 @@
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
+websockets==17.1  # used directly by scripts/load_test.py
+pytest==9.1.1
+httpx2==2.13.1

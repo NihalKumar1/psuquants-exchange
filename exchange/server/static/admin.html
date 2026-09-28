@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin · PSU Quants Exchange</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Login screen: shown until the server accepts the admin secret. -->
+<section id="login-screen" class="join">
+  <div class="join-card">
+    <div class="wordmark">PSU QUANTS <span>EXCHANGE</span></div>
+    <p class="tagline">Admin</p>
+    <form id="login-form" class="stack-form">
+      <label>Admin secret
+        <input id="login-secret" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="primary">Log in</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </div>
+</section>
+
+<!-- Admin screen. -->
+<section id="admin-screen" hidden>
+  <header class="topbar">
+    <div class="wordmark">PSU QUANTS <span>EXCHANGE</span> · ADMIN</div>
+    <div class="room-code"><small>Room code</small><b id="room-code"></b></div>
+    <div class="me">
+      <div class="stat"><small>Joining</small><b id="joining-status"></b></div>
+      <button id="toggle-joining" type="button" class="ghost"></button>
+      <button id="reset-game" type="button" class="ghost">Reset game</button>
+      <button id="log-out" type="button" class="ghost">Log out</button>
+    </div>
+  </header>
+  <p id="message"></p>
+
+  <main class="admin">
+    <!-- Left: create/edit a market, and info drops. -->
+    <div class="column">
+      <section class="panel">
+        <h2 id="market-form-heading">Create market</h2>
+        <form id="market-form" class="stack-form">
+          <label>Title / question
+            <input id="f-title" autocomplete="off" required>
+          </label>
+          <div class="form-grid">
+            <label>Tick size <input id="f-tick" type="number" min="1" step="1" required></label>
+            <label>Max position <input id="f-max-position" type="number" min="1" step="1" required></label>
+            <label>Forced-trade size <input id="f-forced-size" type="number" min="1" step="1" required></label>
+            <label>Forced-trade timer (s) <input id="f-forced-seconds" type="number" min="1" step="1" required></label>
+          </div>
+          <div class="form-buttons">
+            <button id="market-submit" type="submit" class="primary">Create market</button>
+            <button id="market-cancel-edit" type="button" class="ghost" hidden>Cancel edit</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel">
+        <h2>Info drop</h2>
+        <form id="info-form" class="entry info">
+          <input id="info-note" autocomplete="off" placeholder="Note (optional)">
+          <button type="submit" class="primary">Mark info drop</button>
+        </form>
+        <table id="info-drops">
+          <thead><tr><th>Time</th><th>Note</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+    </div>
+
+    <!-- Right: the markets and the traders. -->
+    <div class="column">
+      <section class="panel">
+        <h2>Markets</h2>
+        <div class="scroll-x">
+          <table id="markets">
+            <thead>
+              <tr>
+                <th>Market</th><th>Status</th><th class="num">Tick</th><th class="num">Max pos</th>
+                <th class="num">Bid</th><th class="num">Offer</th><th class="num">Last</th>
+                <th class="num">Mark</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Traders</h2>
+        <div class="scroll-x">
+          <table id="traders">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+</section>
+
+<script src="/static/common.js"></script>
+<script src="/static/admin.js"></script>
+</body>
+</html>

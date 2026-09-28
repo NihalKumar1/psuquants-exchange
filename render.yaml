@@ -1,0 +1,17 @@
+# Render Blueprint: how Render builds and runs the exchange (see README.md, "Deploy to Render").
+# Free plan: one instance, memory only, sleeps after 15 minutes without traffic.
+services:
+  - type: web
+    name: psuquants-exchange
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # One worker only: all live game state is in this one process's memory.
+    startCommand: uvicorn exchange.server.main:app --host 0.0.0.0 --port $PORT --workers 1
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.14.4
+      # The admin password. Render asks for it when the Blueprint is created; it is never
+      # stored in this repo. The server refuses to start without it.
+      - key: ADMIN_SECRET
+        sync: false
