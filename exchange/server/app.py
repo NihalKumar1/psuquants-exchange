@@ -8,7 +8,8 @@ Trader messages (all JSON), on /ws:
                               Any command may carry a "ref"; see "done" below.
   server -> browser   "welcome" + "snapshot" after joining, "error" if joining failed,
                       "update" after every change, "rejected" (to the sender only, with
-                      the command's "market_id"),
+                      the command's "market_id", "kind" (its "type") and "side", so the page
+                      can say which market and outline the form that sent it),
                       "opened_elsewhere" when the same trader connects from a newer tab,
                       "kicked" when the admin removes them,
                       "welcome" + "snapshot" + "reset" when the admin resets the game,
@@ -155,19 +156,22 @@ def create_app(room, admin_secret):
 
     async def run_trader_command(websocket, trader_id, message):
         # A rejection names the market the command was for (None for e.g. cancel all
-        # everywhere), so the page can say which of the markets on screen it was in.
-        market_id = message.get("market_id")
+        # everywhere), so the page can say which of the markets on screen it was in. It also
+        # says what kind of command it was ("limit", "quote", "width", ...) and its side (None
+        # for most kinds), so the page can outline the form that sent it.
+        sent = {"market_id": message.get("market_id"), "kind": message.get("type"),
+                "side": message.get("side")}
         try:
             events = room.handle(trader_id, message)
         except (KeyError, ValueError, TypeError):
-            await send(websocket, {"type": "rejected", "command": message.get("type"),
-                                   "market_id": market_id, "reason": "bad message"})
+            await send(websocket, {"type": "rejected", "command": message.get("type"), **sent,
+                                   "reason": "bad message"})
             return
 
         for event in events:
             if isinstance(event, Rejected):
-                await send(websocket, {"type": "rejected", "command": event.command,
-                                       "market_id": market_id, "reason": event.reason})
+                await send(websocket, {"type": "rejected", "command": event.command, **sent,
+                                       "reason": event.reason})
         if any(not isinstance(event, Rejected) for event in events):
             await broadcast(events)
             await tell_admins()

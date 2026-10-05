@@ -8,6 +8,7 @@
 
 const TOKEN_KEY = "psuq-token";            // lets this browser rejoin as the same trader
 const CLICK_SIZE_KEY = "psuq-click-size";  // one click size for every market
+const ERROR_SECONDS = 3;                   // how long an error stays on screen
 
 let socket = null;
 let me = null;          // {trader_id, name, token} once the server welcomes us
@@ -16,6 +17,9 @@ let state = null;       // {columns, table_markets, book_depth, markets, me, tot
 let tape = [];          // every trade in every market, oldest first
 let freshTradeIds = new Set();  // trades from the latest update, briefly highlighted
 const columns = {};     // market_id -> that market's column on the page
+let notice = "";        // a message that stays until things change, e.g. "Connection lost"
+let errorTimer = null;  // takes the current error down when its time is up
+let outlined = [];      // boxes and forms outlined in red along with the current error
 
 // --- Connection ---------------------------------------------------------------------------
 
@@ -26,7 +30,7 @@ function connect(firstMessage) {
   socket.onmessage = (event) => handle(JSON.parse(event.data));
   socket.onclose = () => {
     if (stayDisconnected || me === null) return;
-    showMessage("Connection lost. Reconnecting…");
+    setNotice("Connection lost. Reconnecting…");
     setTimeout(() => connect({ type: "rejoin", token: me.token }), 2000);
   };
 }
@@ -35,7 +39,7 @@ function send(command) {
   if (socket && socket.readyState === WebSocket.OPEN) {
     socket.send(JSON.stringify(command));
   } else {
-    showMessage("Not connected. Please wait…");
+    showError("Not connected. Please wait…");
   }
 }
 
@@ -43,7 +47,7 @@ function handle(message) {
   if (message.type === "welcome") {
     me = message;
     save(TOKEN_KEY, message.token);
-    showMessage("");
+    setNotice("");
     document.getElementById("join-screen").hidden = true;
     document.getElementById("trade-screen").hidden = false;
     document.getElementById("my-name").textContent = message.name;
@@ -62,11 +66,13 @@ function handle(message) {
     render();
   } else if (message.type === "reset") {
     // Comes right after a new welcome and an empty snapshot, which already redrew the screen.
-    showMessage("The instructor started a new game.");
+    showError("The instructor started a new game.");
   } else if (message.type === "rejected") {
-    // Several markets are on screen, so say which one the rejected order was for.
+    // Several markets are on screen, so say which one the rejected order was for, and
+    // outline the form that sent it.
     const market = state && state.markets[message.market_id];
-    showMessage((market ? `${market.title}: rejected: ` : "Rejected: ") + message.reason);
+    showError((market ? `${market.title}: rejected: ` : "Rejected: ") + message.reason,
+      [formThatSent(message)]);
   } else if (message.type === "error") {
     // Joining failed (wrong code, name taken, or the server restarted and forgot us).
     me = null;
@@ -76,11 +82,11 @@ function handle(message) {
     document.getElementById("join-error").textContent = message.reason;
   } else if (message.type === "opened_elsewhere") {
     stayDisconnected = true;
-    showMessage("You opened the exchange in another tab or device. This tab is no longer connected.");
+    setNotice("You opened the exchange in another tab or device. This tab is no longer connected.");
   } else if (message.type === "kicked") {
     stayDisconnected = true;
     save(TOKEN_KEY, null);
-    showMessage("The instructor removed you from this game.");
+    setNotice("The instructor removed you from this game.");
   }
 }
 
@@ -90,6 +96,7 @@ function render() {
   document.getElementById("my-name").textContent = state.name;  // the admin may rename us
   document.getElementById("total-pnl").replaceChildren(signed(state.total.total));
   renderColumns();
+  renderMyOrders();
   renderPositions();
   renderTape();
 }
@@ -142,7 +149,6 @@ function renderColumn(column, market, mine) {
 
   renderBook(column, market);
   renderMyNumbers(column, mine);
-  renderMyOrders(column, market, mine);
 }
 
 function renderTradeOrTighten(column, market, mine) {
@@ -292,22 +298,29 @@ function renderMyNumbers(column, mine) {
   part(column, "my-total").replaceChildren(signed(mine.total));
 }
 
-function renderMyOrders(column, market, mine) {
-  const tbody = part(column, "my-orders").tBodies[0];
-  if (mine.orders.length === 0) {
-    tbody.replaceChildren(emptyRow(4, "No resting orders"));
+function renderMyOrders() {
+  // My resting orders in every running market, in one table in the sidebar: markets in column
+  // order (oldest first), and within a market bids then offers, best price first.
+  // Settled markets have no column, so their (frozen, uncancellable) orders aren't listed.
+  const myOrders = state.columns.flatMap((marketId) =>
+    state.me[marketId].orders.map((order) => ({ marketId, order })));
+  const tbody = document.querySelector("#my-orders tbody");
+  if (myOrders.length === 0) {
+    tbody.replaceChildren(emptyRow(5, "No resting orders"));
     return;
   }
-  const rows = mine.orders.map((order) => {
+  const rows = myOrders.map(({ marketId, order }) => {
+    const title = state.markets[marketId].title;
     const side = document.createElement("span");
     side.textContent = order.side === "buy" ? "Bid" : "Offer";
     side.className = order.side === "buy" ? "up" : "down";
     const cancel = button("✕", "icon", () =>
-      send({ type: "cancel", market_id: market.market_id, order_id: order.order_id }));
+      send({ type: "cancel", market_id: marketId, order_id: order.order_id }));
     cancel.title = "Cancel this order";
-    const row = tableRow([side, number(order.price), number(order.size), cancel]);
-    row.cells[1].className = "num";
+    const row = tableRow([title, side, number(order.price), number(order.size), cancel]);
+    row.cells[0].title = title;  // long titles are cut off; hover shows it all
     row.cells[2].className = "num";
+    row.cells[3].className = "num";
     return row;
   });
   tbody.replaceChildren(...rows);
@@ -373,22 +386,85 @@ function renderTape() {
 
 // --- Small helpers ------------------------------------------------------------------------
 
-function showMessage(text) {
-  // The message line is one line high; a message too long for it ends in "…" and shows in
-  // full on hover.
-  const message = document.getElementById("message");
-  message.textContent = text;
-  message.title = text;
+// Messages go in the red banner under the top bar. There are two kinds:
+//  - an error ("rejected: …", "Enter a price."): shows for ERROR_SECONDS, then goes away;
+//  - a notice ("Connection lost. Reconnecting…"): stays until setNotice("") clears it.
+// An error shows on top of a notice; when the error's time is up, the notice comes back.
+
+function showError(text, outline = []) {
+  // Show an error, and outline these boxes or forms in red until it goes away. A new error
+  // replaces the one showing and starts the time again.
+  clearTimeout(errorTimer);
+  removeOutlines();
+  outlined = outline.filter((element) => element);  // skip "no form" (null)
+  outlined.forEach((element) => element.classList.add("wrong"));
+  showBanner(text);
+  errorTimer = setTimeout(endError, ERROR_SECONDS * 1000);
 }
 
-function readNumber(input, what) {
-  // Returns the number typed in a box, or null (with a message) if the box is empty.
-  const text = input.value.trim();
-  if (text === "") {
-    showMessage(`Enter a ${what}.`);
+function endError() {
+  errorTimer = null;
+  removeOutlines();
+  if (notice) showBanner(notice); else hideBanner();
+}
+
+function setNotice(text) {
+  // A notice replaces any error showing right away: it matters more (e.g. connection lost).
+  if (text === notice) return;  // e.g. a reconnect that failed again: don't shake again
+  notice = text;
+  if (notice) {
+    clearTimeout(errorTimer);
+    endError();
+  } else if (errorTimer === null) {
+    hideBanner();
+  }
+}
+
+function showBanner(text) {
+  const banner = document.getElementById("banner");
+  banner.textContent = text;
+  banner.hidden = false;
+  // Shake it, even if it was already showing this same message.
+  banner.classList.remove("shake");
+  void banner.offsetWidth;  // makes the browser notice the class came off before it goes back on
+  banner.classList.add("shake");
+}
+
+function hideBanner() {
+  document.getElementById("banner").hidden = true;
+}
+
+function removeOutlines() {
+  outlined.forEach((element) => element.classList.remove("wrong"));
+  outlined = [];
+}
+
+function formThatSent(rejection) {
+  // The form in the market's column that sends this kind of command, or null: a click on the
+  // book, a cancel, a side choice and cancel all have no form.
+  const column = columns[rejection.market_id];
+  const formName = {
+    limit: `${rejection.side}-form`,  // the Bid form (buy) or the Offer form (sell)
+    quote: "quote-form",
+    width: "width-form",
+    mm_quote: "mm-quote-form",
+  }[rejection.kind];
+  return column && formName ? part(column, formName) : null;
+}
+
+function readNumbers(column, boxes) {
+  // The numbers typed in some of a column's boxes, e.g.
+  //   readNumbers(column, [["buy-price", "a price"], ["buy-size", "a size"]]) -> [35, 10]
+  // If any box is empty, returns null and shows an error naming the first empty box, with
+  // every empty box outlined.
+  const inputs = boxes.map(([name]) => part(column, name));
+  const empty = inputs.filter((input) => input.value.trim() === "");
+  if (empty.length > 0) {
+    const what = boxes[inputs.indexOf(empty[0])][1];
+    showError(`Enter ${what}.`, empty);
     return null;
   }
-  return Number(text);
+  return inputs.map((input) => Number(input.value.trim()));
 }
 
 function clickSize() {
@@ -411,38 +487,38 @@ function buildColumn(marketId) {
       sendCommand();
     });
   };
-  const read = (name, what) => readNumber(part(column, name), what);
+  const read = (boxes) => readNumbers(column, boxes);
 
   // Two separate limit-order entries: one for bids (buy), one for offers (sell).
   for (const side of ["buy", "sell"]) {
     onSubmit(`${side}-form`, () => {
-      const price = read(`${side}-price`, "price");
-      const size = read(`${side}-size`, "size");
-      if (price === null || size === null) return;
+      const numbers = read([[`${side}-price`, "a price"], [`${side}-size`, "a size"]]);
+      if (numbers === null) return;
+      const [price, size] = numbers;
       send({ type: "limit", market_id: marketId, side, price, size });
     });
   }
 
   onSubmit("quote-form", () => {
-    const bid = read("quote-bid", "bid");
-    const ask = read("quote-ask", "offer");
-    const size = read("quote-size", "size");
-    if (bid === null || ask === null || size === null) return;
+    const numbers = read([["quote-bid", "a bid"], ["quote-ask", "an offer"], ["quote-size", "a size"]]);
+    if (numbers === null) return;
+    const [bid, ask, size] = numbers;
     send({ type: "quote", market_id: marketId, bid_price: bid, ask_price: ask, size });
   });
 
   // Trade or Tighten.
   onSubmit("width-form", () => {
-    const width = read("width-input", "width");
-    if (width === null) return;
+    const numbers = read([["width-input", "a width"]]);
+    if (numbers === null) return;
+    const [width] = numbers;
     send({ type: "width", market_id: marketId, width });
     part(column, "width-input").value = "";
   });
 
   onSubmit("mm-quote-form", () => {
-    const bid = read("mm-bid", "bid");
-    const ask = read("mm-ask", "offer");
-    if (bid === null || ask === null) return;
+    const numbers = read([["mm-bid", "a bid"], ["mm-ask", "an offer"]]);
+    if (numbers === null) return;
+    const [bid, ask] = numbers;
     send({ type: "mm_quote", market_id: marketId, bid, ask });
   });
 

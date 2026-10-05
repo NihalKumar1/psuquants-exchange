@@ -241,7 +241,8 @@ def test_malformed_messages_are_rejected_without_closing_the_socket(client):
 
         alice.send_json({"type": "limit", "market_id": "cars"})
         assert alice.receive_json() == {"type": "rejected", "command": "limit",
-                                        "market_id": "cars", "reason": "bad message"}
+                                        "market_id": "cars", "kind": "limit", "side": None,
+                                        "reason": "bad message"}
         alice.send_text("not json")
         assert alice.receive_json()["reason"] == "bad message"
 
@@ -270,7 +271,25 @@ def test_a_rejection_without_a_market_has_no_market_id(client):
         alice.send_json({"type": "nonsense"})
 
         assert alice.receive_json() == {"type": "rejected", "command": "nonsense",
-                                        "market_id": None, "reason": "bad message"}
+                                        "market_id": None, "kind": "nonsense", "side": None,
+                                        "reason": "bad message"}
+
+
+def test_a_rejection_says_which_kind_of_command_it_was_for(client):
+    # So the page can outline the form that sent it (the Offer form, the Quote form, ...).
+    with client.websocket_connect("/ws") as alice:
+        join(alice, "Alice")
+
+        limit(alice, "sell", 36.5, 1)
+        off_tick_offer = alice.receive_json()
+        alice.send_json({"type": "quote", "market_id": "cars", "bid_price": 40,
+                         "ask_price": 30, "size": 1})
+        crossed_quote = alice.receive_json()
+
+    assert off_tick_offer["type"] == "rejected"
+    assert (off_tick_offer["kind"], off_tick_offer["side"]) == ("limit", "sell")
+    assert crossed_quote["type"] == "rejected"
+    assert (crossed_quote["kind"], crossed_quote["side"]) == ("quote", None)
 
 
 def test_cancel_and_cancel_all(client):

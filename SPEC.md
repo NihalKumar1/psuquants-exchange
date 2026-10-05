@@ -203,15 +203,30 @@ Milestones 5 and 6 are skipped for now. **Reset** moves from M6 into M7 (without
 75. Only **running** markets get a column (AUCTION, MM_QUOTING, FORCED_TRADE, OPEN, HALTED). CREATED and SETTLED markets have none. *(This replaces the Q50/Q61 rule.)*
 76. Book depth: **10 / 10 when one market is running, 5 / 5 when several are.** The fixed layout (Q72) stays; the book changes shape when a second market starts or the second-to-last one settles.
 77. When there are more markets than fit across the screen, the columns **squeeze to fit** (one row, narrower columns).
-78. Each column holds that market's **own position, realized, MTM and total PnL**, its resting orders and **"Cancel all (this market)"**. **Total PnL, click size and "Cancel all (all markets)"** stay in the top bar.
+78. Each column holds that market's **own position, realized, MTM and total PnL**, its resting orders and **"Cancel all (this market)"**. **Total PnL, click size and "Cancel all (all markets)"** stay in the top bar. *(Since 2026-10-05 the resting orders are in the sidebar instead; see Q93–Q96.)*
 79. The positions table and the trade tape are **combined**: the tape lists trades from every market with a Market column, and the positions table has one column per market. Both **keep settled markets** (but not CREATED ones). A trader's settled PnL shows only inside Total PnL.
-80. Positions and tape sit in a **right sidebar**; the market columns share the rest of the width.
-81. A rejection uses the one message line under the top bar, **prefixed with the market title** ("Cars: rejected: …").
+80. Positions and tape sit in a **right sidebar**; the market columns share the rest of the width. *(Resting orders joined them on 2026-10-05; see Q93.)*
+81. A rejection uses the one message line under the top bar, **prefixed with the market title** ("Cars: rejected: …"). *(Since 2026-10-05 that line is a floating red banner that goes away after 3 s; see Q87–Q92.)*
 82. Market columns (and the positions table's market columns) go **oldest on the left** (creation order).
 83. When no market is running: "No market is running. Wait for the instructor." where the columns go. The sidebar and Total PnL still show.
 84. Below 1100 px wide, the market columns **stack vertically** (full width), with the sidebar underneath.
 85. The admin page doesn't change in milestone 5.
 86. Testing: the **server decides** which markets get columns, their order and the book depth, and pytest tests that. The page only draws what it is told.
+
+### Answered while fixing the trader page's error messages (2026-10-05)
+Errors used to stay on screen until the next reconnect, and were easy to miss.
+87. An error (a rejection, "Enter a price.", "Not connected") **disappears after 3 seconds**. A new error replaces the one showing and the 3 s start again.
+88. It stays in the **top line under the top bar** (Q81, title prefix kept), as a **solid red banner** that **shakes** every time a message arrives, even the same one again.
+89. The banner **floats over the page** (it takes no space), so the book never moves. While it shows, it covers the top strip of the page (the market titles).
+90. **Red outline**: the empty boxes when the page's own check fails ("Enter a price."), and the **whole form** whose command the server rejected (Bid, Offer, Quote, width, MM quote). The outline goes away **with the banner**. To know the form, the server's rejection says the command's kind and side.
+91. **Notices stay until resolved**, in the same red banner: "Connection lost. Reconnecting…" until reconnected; "opened in another tab" and "removed from this game" for good. An error shows on top of a notice for 3 s, then the notice comes back. "The instructor started a new game." goes away after 3 s like an error.
+92. **Trader page only**: the admin page keeps its message line.
+
+### Answered while moving resting orders to the sidebar (2026-10-05)
+93. A trader's resting orders are in **one "Resting orders" panel at the top of the right sidebar**, above Positions. The market columns no longer list them.
+94. **"Cancel all (this market)" stays in each market's column**, under its PnL tiles.
+95. The panel lists orders in **running markets only** (the ones with a column). Orders frozen in a settled market aren't listed.
+96. It is **one table with a Market column** (Market | Side | Price | Size | ✕): markets oldest first, and within a market bids then offers, best price first.
 
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.

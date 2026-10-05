@@ -39,7 +39,9 @@
       <button id="cancel-all-everywhere" type="button" class="ghost">Cancel all (all markets)</button>
     </div>
   </header>
-  <p id="message"></p>
+  <!-- Errors and notices: a red banner that floats over the page just under the top bar (it
+       takes no space, so the book never moves). See showError and setNotice in trader.js. -->
+  <div class="banner-anchor"><p id="banner" hidden></p></div>
 
   <main class="terminal">
     <!-- Left: one column per running market, side by side (oldest on the left). -->
@@ -48,8 +50,16 @@
       <div id="markets"></div>
     </div>
 
-    <!-- Right: everyone's positions and the trade tape, for every market. -->
+    <!-- Right: my resting orders, everyone's positions and the trade tape, for every market. -->
     <aside class="column">
+      <section class="panel">
+        <h2>Resting orders</h2>
+        <table id="my-orders">
+          <thead><tr><th>Market</th><th>Side</th><th class="num">Price</th><th class="num">Size</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
       <section class="panel">
         <h2>Positions</h2>
         <table id="positions">
@@ -152,11 +162,6 @@
         <div class="tile"><small>MTM</small><b class="my-unrealized"></b></div>
         <div class="tile"><small>Total</small><b class="my-total"></b></div>
       </div>
-      <h3>My orders</h3>
-      <table class="my-orders">
-        <thead><tr><th>Side</th><th class="num">Price</th><th class="num">Size</th><th></th></tr></thead>
-        <tbody></tbody>
-      </table>
       <div class="cancel-all">
         <button type="button" class="cancel-all-market ghost">Cancel all (this market)</button>
       </div>
