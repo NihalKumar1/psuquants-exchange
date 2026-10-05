@@ -9,8 +9,8 @@ Screenshot setup (PowerShell, from the project folder with the venv active):
     uvicorn exchange.server.main:app --workers 1
 
 Open http://localhost:8000/admin, log in, create a market (e.g. "Cars registered in Centre
-County, PA", tick 500, max position 50) and click Open. The bots trade in the same market the
-trader page shows (the newest one that isn't settled). Then, in a second terminal:
+County, PA", tick 500, max position 50) and click Open. The bots trade in the newest running
+market (the rightmost column on the trader page). Then, in a second terminal:
 
     python scripts/demo_fill.py <room code> --center 120000
 
@@ -70,11 +70,11 @@ async def main(args):
     for bot in bidders + offerers:
         snapshot = await bot.join(args.url, args.code)
 
-    # The same market the trader page shows: the newest one that isn't settled.
-    markets = list(snapshot["markets"].values())
-    unsettled = [m for m in markets if m["status"] != "settled"]
-    market = (unsettled or markets)[-1]
-    market_id = market["market_id"]
+    # The newest running market: the rightmost column on the trader page.
+    if not snapshot["columns"]:
+        raise SystemExit("No market is running. Open one on the admin page first.")
+    market_id = snapshot["columns"][-1]
+    market = snapshot["markets"][market_id]
     tick = market["tick_size"]
     center = round(args.center / tick) * tick
     print(f"Filling '{market['title']}' around {center:,} (tick {tick:,})")

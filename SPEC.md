@@ -147,7 +147,7 @@ The admin picks a trader and a market. The screen shows:
 33. Rejoin: **both** methods. The browser stores a secret token and rejoins automatically after a refresh or Wi-Fi drop. Typing the same name (with the room code) also reclaims that trader if nobody is currently connected as them. Tokens are kept in memory only and never go in the event log or export.
 34. Names: trimmed, **1–20 characters**, unique **ignoring case** ("alice" is refused if "Alice" exists).
 35. Same trader in two tabs or devices: **the newest connection wins**. The old tab is told "opened elsewhere" and disconnected.
-36. Book display: the **top 10 price levels** on each side, with owner names and sizes.
+36. Book display: the **top 10 price levels** on each side, with owner names and sizes. *(From M5: 5 levels when several markets are running; see Q76.)*
 37. Trade tape: **all trades**, newest first, scrollable.
 38. Positions table: **every joined trader**, including those at 0.
 39. Late joiners: the **admin can lock or unlock joining** (the control arrives in M3). Joining is always open in M2. *(Done in M3.)*
@@ -166,7 +166,7 @@ The admin picks a trader and a market. The screen shows:
 47. If `ADMIN_SECRET` isn't set, the server **refuses to start**.
 48. Settlement value: **any integer** (0 and negatives allowed). It doesn't have to be on the tick.
 49. The admin page shows **every trader's positions and PnL**. The admin page is never projected.
-50. Until milestone 5, the trader page shows the **newest market that isn't settled** (if every market is settled, the newest one). *(Changed 2026-09-28. The earlier answer, "the first market created", left traders stuck on a settled market after the admin opened a new one.)*
+50. Until milestone 5, the trader page shows the **newest market that isn't settled** (if every market is settled, the newest one). *(Changed 2026-09-28. The earlier answer, "the first market created", left traders stuck on a settled market after the admin opened a new one.)* *(Replaced in M5 by Q75.)*
 51. While joining is locked, **only new names are refused**. Existing traders who aren't kicked can still rejoin by token or by typing their name.
 52. A market can be **edited** (all five settings) **only while it is CREATED**. Markets can't be deleted.
 
@@ -179,7 +179,7 @@ The admin picks a trader and a market. The screen shows:
 58. Kicking during Trade or Tighten: in **AUCTION**, the kicked trader's widths stop counting and the best width **reverts** to the narrowest remaining one (or none). In **MM_QUOTING**, if the MM is kicked, the **next-narrowest width holder becomes MM** at their width; if there is none, the market **returns to CREATED**. In **FORCED_TRADE**, the window runs on and the kicked MM's forced trades print as usual (like any kicked trader's position, it stays). Kicked non-MM traders are left out of the forced trade.
 59. Forced trades print in the **order of each trader's final choice**, then randomly assigned traders in **join order**.
 60. The admin can **end the window early** ("End now"); it works the same as the timer running out.
-61. The trader page keeps the Q50 rule (newest unsettled market) until M5.
+61. The trader page keeps the Q50 rule (newest unsettled market) until M5. *(Replaced in M5 by Q75.)*
 62. Random side: an independent **coin flip** (50/50) for each trader who hasn't chosen.
 63. Traders see the MM's bid and offer **as soon as the MM submits it**, before the window starts.
 
@@ -195,8 +195,23 @@ Milestones 5 and 6 are skipped for now. **Reset** moves from M6 into M7 (without
 71. Render is set up from a **`render.yaml` Blueprint**. The instructor creates the GitHub repo and pushes.
 
 ### Answered after the first Render load test (2026-09-28)
-72. The trader page's order book has a **fixed layout** so the clickable best bid and offer never move: always **10 offer slots, the divider, then 10 bid slots** (Q36's depth), every row the same height, empty slots left blank. The best offer is always directly above the divider and the best bid directly below it.
+72. The trader page's order book has a **fixed layout** so the clickable best bid and offer never move: always **10 offer slots, the divider, then 10 bid slots** (Q36's depth; 5 and 5 when several markets are running, Q76), every row the same height, empty slots left blank. The best offer is always directly above the divider and the best bid directly below it.
 73. When the names at one price don't fit on one line, they are **cut off with "…"**; hovering the row shows the full list (in time priority).
+
+### Answered during milestone 5 planning (2026-10-05)
+74. The trader page shows several markets **side by side**: every running market gets its own column at the same time. There are no tabs.
+75. Only **running** markets get a column (AUCTION, MM_QUOTING, FORCED_TRADE, OPEN, HALTED). CREATED and SETTLED markets have none. *(This replaces the Q50/Q61 rule.)*
+76. Book depth: **10 / 10 when one market is running, 5 / 5 when several are.** The fixed layout (Q72) stays; the book changes shape when a second market starts or the second-to-last one settles.
+77. When there are more markets than fit across the screen, the columns **squeeze to fit** (one row, narrower columns).
+78. Each column holds that market's **own position, realized, MTM and total PnL**, its resting orders and **"Cancel all (this market)"**. **Total PnL, click size and "Cancel all (all markets)"** stay in the top bar.
+79. The positions table and the trade tape are **combined**: the tape lists trades from every market with a Market column, and the positions table has one column per market. Both **keep settled markets** (but not CREATED ones). A trader's settled PnL shows only inside Total PnL.
+80. Positions and tape sit in a **right sidebar**; the market columns share the rest of the width.
+81. A rejection uses the one message line under the top bar, **prefixed with the market title** ("Cars: rejected: …").
+82. Market columns (and the positions table's market columns) go **oldest on the left** (creation order).
+83. When no market is running: "No market is running. Wait for the instructor." where the columns go. The sidebar and Total PnL still show.
+84. Below 1100 px wide, the market columns **stack vertically** (full width), with the sidebar underneath.
+85. The admin page doesn't change in milestone 5.
+86. Testing: the **server decides** which markets get columns, their order and the book depth, and pytest tests that. The page only draws what it is told.
 
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.
