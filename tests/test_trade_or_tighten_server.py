@@ -185,4 +185,6 @@ def test_rejections_and_bad_messages_go_only_to_the_sender(client):
     assert [reply["type"] for reply in replies] == ["rejected"] * 4
     assert "multiple of the tick" in replies[0]["reason"]
     assert [reply["reason"] for reply in replies[1:]] == ["bad message"] * 3
+    # Each says which kind of command it was for, so the page can outline that form.
+    assert [reply["kind"] for reply in replies] == ["width", "width", "choose_side", "mm_quote"]
     assert bob_update["markets"][MARKET]["tot"]["best_holder"] == "Bob"

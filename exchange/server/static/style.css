@@ -164,6 +164,34 @@ button.icon:hover { color: var(--ask); }
   font-size: 13px;
 }
 
+/* The trader page's banner for errors and notices. It floats over the page just under the top
+   bar, so the book never moves when it comes and goes. The anchor is sticky, so the banner
+   stays in view (at the top of the window) when the page is scrolled down. */
+.banner-anchor { position: sticky; top: 0; height: 0; z-index: 10; }
+#banner {
+  position: absolute;
+  top: 8px;
+  left: 20px;
+  right: 20px;
+  margin: 0;
+  padding: 10px 16px;
+  background: var(--ask);
+  color: #fff;
+  font-weight: 700;
+  font-size: 15px;
+  border-radius: 8px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+}
+/* A short shake every time a message arrives, even the same one again. */
+#banner.shake { animation: shake 0.4s ease-in-out; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+/* An empty box, or the form whose command was rejected, while its error is showing. */
+.wrong { outline: 2px solid var(--ask); outline-offset: 2px; border-radius: 7px; }
+
 /* --- Terminal layout ----------------------------------------------------------------------- */
 
 /* The market columns on the left, the sidebar (positions, tape) on the right. */
@@ -171,7 +199,7 @@ button.icon:hover { color: var(--ask); }
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(290px, 420px);
   gap: 14px;
-  padding: 0 20px 20px;
+  padding: 14px 20px 20px;
   align-items: start;
 }
 .column { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
@@ -290,7 +318,15 @@ tbody tr:last-child td { border-bottom: none; }
 .price { text-align: center; }
 .empty td { color: var(--muted); text-align: center; padding: 18px; }
 
-.my-orders td:last-child { text-align: right; width: 1%; }
+/* My resting orders, in the sidebar. Long market titles end in "…" (full title on hover). */
+#my-orders { table-layout: fixed; }
+#my-orders th:nth-child(2) { width: 56px; }  /* side */
+#my-orders th:nth-child(3) { width: 72px; }  /* price */
+#my-orders th:nth-child(4) { width: 52px; }  /* size */
+#my-orders th:nth-child(5) { width: 48px; }  /* cancel */
+#my-orders td:first-child { color: var(--muted); }
+#my-orders td:last-child { text-align: right; }
+
 .cancel-all { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 .cancel-all button { font-size: 12px; padding: 7px 8px; }
 
@@ -378,6 +414,7 @@ tbody tr:last-child td { border-bottom: none; }
 
 @media (max-width: 600px) {
   .topbar, .terminal { padding-left: 16px; padding-right: 16px; }
+  #banner { left: 16px; right: 16px; }
 }
 
 /* --- Admin page ---------------------------------------------------------------------------- */

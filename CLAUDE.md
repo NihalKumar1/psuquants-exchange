@@ -66,7 +66,9 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   tests). Traders on `/ws`, admin on `/admin/ws`. Also runs the forced-trade timer (an asyncio
   task that ends the window when time is up; Reset cancels running timers). A trader command
   may carry a `"ref"`; the server then replies `{"type": "done", "ref"}` once it has told
-  everyone (used by the load test to time commands; browsers never send it).
+  everyone (used by the load test to time commands; browsers never send it). A `rejected` reply
+  carries the command's `market_id`, `kind` and `side`, so the trader page can outline the form
+  that sent it.
 - `exchange/server/main.py`: the app uvicorn runs (`build_app(environ)` reads `ADMIN_SECRET`).
 - `exchange/server/static/`: trader page, admin page, and `common.js` helpers (plain HTML/JS/CSS,
   no build step).
