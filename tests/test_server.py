@@ -7,8 +7,10 @@ from starlette.websockets import WebSocketDisconnect
 from exchange.server.app import create_app
 from exchange.server.room import Room
 from exchange.server.views import trader_view
+from helpers import open_market
 
 CODE = "1234"
+SECRET = "test-secret"
 
 
 @pytest.fixture
@@ -20,7 +22,7 @@ def room(ex):
 def client(room):
     # "with" makes every socket in a test share one event loop, like the real server does.
     # Without it, each socket gets its own loop and the app's shared lock can hang.
-    with TestClient(create_app(room, admin_secret="test-secret")) as client:
+    with TestClient(create_app(room, admin_secret=SECRET)) as client:
         yield client
 
 
@@ -239,12 +241,36 @@ def test_malformed_messages_are_rejected_without_closing_the_socket(client):
 
         alice.send_json({"type": "limit", "market_id": "cars"})
         assert alice.receive_json() == {"type": "rejected", "command": "limit",
-                                        "reason": "bad message"}
+                                        "market_id": "cars", "reason": "bad message"}
         alice.send_text("not json")
         assert alice.receive_json()["reason"] == "bad message"
 
         limit(alice, "buy", 30, 1)
         assert alice.receive_json()["type"] == "update"
+
+
+def test_a_rejection_says_which_market_it_was_in(client, room):
+    open_market(room.exchange, market_id="homes", tick_size=5)
+    with client.websocket_connect("/ws") as alice:
+        join(alice, "Alice")
+
+        limit(alice, "buy", 101, 1, market_id="homes")
+        off_tick = alice.receive_json()
+        alice.send_json({"type": "take", "market_id": "homes"})
+        malformed = alice.receive_json()
+
+    assert (off_tick["type"], off_tick["market_id"]) == ("rejected", "homes")
+    assert (malformed["reason"], malformed["market_id"]) == ("bad message", "homes")
+
+
+def test_a_rejection_without_a_market_has_no_market_id(client):
+    with client.websocket_connect("/ws") as alice:
+        join(alice, "Alice")
+
+        alice.send_json({"type": "nonsense"})
+
+        assert alice.receive_json() == {"type": "rejected", "command": "nonsense",
+                                        "market_id": None, "reason": "bad message"}
 
 
 def test_cancel_and_cancel_all(client):
@@ -266,6 +292,34 @@ def test_cancel_and_cancel_all(client):
     assert update["me"]["cars"]["orders"] == []
     assert update["markets"]["cars"]["bids"] == []
     assert update["markets"]["cars"]["asks"] == []
+
+
+# --- Several markets at once ----------------------------------------------------------------
+
+
+def test_two_markets_trade_side_by_side_until_one_settles(client, room):
+    open_market(room.exchange, market_id="homes")
+    with client.websocket_connect("/ws") as alice, client.websocket_connect("/admin/ws") as admin:
+        _, snapshot = join(alice, "Alice")
+        admin.send_json({"type": "admin_login", "secret": SECRET})
+        admin.receive_json()  # welcome
+        admin.receive_json()  # state
+
+        limit(alice, "buy", 30, 1, market_id="cars")
+        cars_order = alice.receive_json()
+        limit(alice, "sell", 900, 2, market_id="homes")
+        both = alice.receive_json()
+
+        admin.send_json({"type": "settle", "market_id": "homes", "value": 850})
+        after_settle = alice.receive_json()
+
+    assert (snapshot["columns"], snapshot["book_depth"]) == (["cars", "homes"], 5)
+    assert names_on(cars_order, "bids", "cars") == [("Alice", 1)]
+    assert names_on(both, "bids", "cars") == [("Alice", 1)]
+    assert names_on(both, "asks", "homes") == [("Alice", 2)]
+    # Settled: no column any more and the book is full depth again, but it stays in the tables.
+    assert (after_settle["columns"], after_settle["book_depth"]) == (["cars"], 10)
+    assert after_settle["table_markets"] == ["cars", "homes"]
 
 
 # --- The "done" reply (used by the load test to time each command) ----------------------------

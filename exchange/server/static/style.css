@@ -126,16 +126,6 @@ button.icon:hover { color: var(--ask); }
   padding: 14px 20px;
   border-bottom: 1px solid var(--line);
 }
-.market-head {
-  flex: 1;
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  min-width: 0;
-  flex-wrap: wrap;
-}
-.market-head h1 { font-size: 17px; }
-.market-head .muted { font-size: 12px; }
 .pill {
   align-self: center;
   font: 700 10px system-ui, sans-serif;
@@ -150,7 +140,8 @@ button.icon:hover { color: var(--ask); }
 .pill.created, .pill.settled { color: var(--muted); background: var(--panel-raised); }
 /* Blue during the Trade or Tighten opening. */
 .pill.auction, .pill.mm_quoting, .pill.forced_trade { color: var(--accent); background: var(--accent-soft); }
-.me { display: flex; align-items: center; gap: 22px; }
+.me { display: flex; align-items: center; gap: 22px; margin-left: auto; flex-wrap: wrap; }
+.me button { font-size: 12px; padding: 7px 10px; }
 .stat { display: flex; flex-direction: column; gap: 1px; }
 .stat small, .tile small {
   color: var(--muted);
@@ -175,14 +166,45 @@ button.icon:hover { color: var(--ask); }
 
 /* --- Terminal layout ----------------------------------------------------------------------- */
 
+/* The market columns on the left, the sidebar (positions, tape) on the right. */
 .terminal {
   display: grid;
-  grid-template-columns: minmax(270px, 310px) minmax(0, 1fr) minmax(290px, 440px);
+  grid-template-columns: minmax(0, 1fr) minmax(290px, 420px);
   gap: 14px;
   padding: 0 20px 20px;
   align-items: start;
 }
 .column { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+/* One column per running market, all in one row: more markets means narrower columns. */
+#markets {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+/* Each column is a size container, so its book can tighten up when the column is narrow
+   (see the @container rule under "Order book"). */
+.market { container-type: inline-size; }
+.waiting { margin: 0; color: var(--muted); text-align: center; padding: 28px 16px; }
+
+/* A market's title bar, at the top of its book panel. */
+.market-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.market-head h1 {
+  font-size: 16px;
+  min-width: 0;
+  white-space: nowrap;      /* one line, so every column's book starts at the same height */
+  overflow: hidden;
+  text-overflow: ellipsis;  /* a long title ends in "…"; hovering shows all of it */
+}
+.market-info {
+  margin: 4px 0 12px;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .panel {
   background: var(--panel);
@@ -199,12 +221,11 @@ button.icon:hover { color: var(--ask); }
   margin-bottom: 12px;
 }
 .panel h3 { font-size: 12px; color: var(--muted); font-weight: 500; margin: 14px 0 8px; }
-.panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
-.panel-head .muted { font-size: 12px; }
 
+/* Narrow screens: markets one under another (full width), then the sidebar. */
 @media (max-width: 1100px) {
   .terminal { grid-template-columns: 1fr; }
-  .book-panel { order: -1; }
+  #markets { grid-auto-flow: row; }
 }
 
 /* --- Order entry --------------------------------------------------------------------------- */
@@ -269,10 +290,14 @@ tbody tr:last-child td { border-bottom: none; }
 .price { text-align: center; }
 .empty td { color: var(--muted); text-align: center; padding: 18px; }
 
-#my-orders td:last-child { text-align: right; width: 1%; }
+.my-orders td:last-child { text-align: right; width: 1%; }
 .cancel-all { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
 .cancel-all button { font-size: 12px; padding: 7px 8px; }
 
+/* Positions: one column per market. Long market titles end in "…" (full title on hover). */
+#positions { table-layout: fixed; }
+#positions th:first-child { width: 34%; }
+#positions th { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #positions tr.mine td { background: var(--accent-soft); }
 #positions tr.mine td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
@@ -280,23 +305,25 @@ tbody tr:last-child td { border-bottom: none; }
 .scroll th { position: sticky; top: 0; background: var(--panel); }
 #tape { table-layout: fixed; }
 #tape td { font-size: 13px; padding: 6px 6px; }
-#tape th:nth-child(1) { width: 76px; }
-#tape th:nth-child(4) { width: 78px; }
-#tape th:nth-child(5) { width: 46px; }
+#tape th:nth-child(1) { width: 70px; }  /* time */
+#tape th:nth-child(2) { width: 22%; }   /* market */
+#tape th:nth-child(5) { width: 72px; }  /* price */
+#tape th:nth-child(6) { width: 44px; }  /* size */
+#tape td:nth-child(2) { color: var(--muted); }
 #tape td:first-child { color: var(--muted); font-family: var(--mono); font-size: 12px; }
 #tape tr.fresh td { animation: flash 1.6s ease-out; }
 @keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
 
 /* --- Order book ---------------------------------------------------------------------------- */
 
-#book { table-layout: fixed; }
-#book th:nth-child(2), #book th:nth-child(4) { width: 72px; }
-#book th:nth-child(3) { width: 104px; }
+.book { table-layout: fixed; }
+.book th:nth-child(2), .book th:nth-child(4) { width: 72px; }
+.book th:nth-child(3) { width: 104px; }
 /* Every row is exactly one line and the same height, so the book never changes shape and the
    best bid and offer stay put (see renderBook in trader.js). Names that don't fit end in "…";
    hovering the row shows them all. */
-#book tbody tr { height: 34px; }
-#book td {
+.book tbody tr { height: 34px; }
+.book td {
   padding: 0 10px;
   font-size: 13px;
   line-height: 20px;  /* well under the row height, so text never stretches a row */
@@ -304,33 +331,33 @@ tbody tr:last-child td { border-bottom: none; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-#book td.names { color: var(--muted); }
-#book td.price { font: 700 14px var(--mono); }
-#book tr.bid td.price { color: var(--bid); }
-#book tr.ask td.price { color: var(--ask); }
+.book td.names { color: var(--muted); }
+.book td.price { font: 700 14px var(--mono); }
+.book tr.bid td.price { color: var(--bid); }
+.book tr.ask td.price { color: var(--ask); }
 
 /* Depth bars: the size cell fills in proportion to the size resting at that level. */
-#book tr.bid td.depth {
+.book tr.bid td.depth {
   background: linear-gradient(to left, var(--bid-soft) var(--depth), transparent var(--depth));
 }
-#book tr.ask td.depth {
+.book tr.ask td.depth {
   background: linear-gradient(to right, var(--ask-soft) var(--depth), transparent var(--depth));
 }
 
 /* The best bid and offer are the clickable rows. */
-#book tr.clickable { cursor: pointer; }
-#book tr.clickable td { color: var(--text); font-weight: 600; }
-#book tr.clickable.bid td { background-color: var(--bid-soft); }
-#book tr.clickable.ask td { background-color: var(--ask-soft); }
-#book tr.clickable:hover td { background-color: transparent; }
-#book tr.clickable.bid:hover { outline: 1px solid var(--bid); outline-offset: -1px; }
-#book tr.clickable.ask:hover { outline: 1px solid var(--ask); outline-offset: -1px; }
+.book tr.clickable { cursor: pointer; }
+.book tr.clickable td { color: var(--text); font-weight: 600; }
+.book tr.clickable.bid td { background-color: var(--bid-soft); }
+.book tr.clickable.ask td { background-color: var(--ask-soft); }
+.book tr.clickable:hover td { background-color: transparent; }
+.book tr.clickable.bid:hover { outline: 1px solid var(--bid); outline-offset: -1px; }
+.book tr.clickable.ask:hover { outline: 1px solid var(--ask); outline-offset: -1px; }
 
 /* My own orders get a blue edge. */
-#book tr.mine td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.book tr.mine td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
 /* The divider between offers and bids: last price and mark. */
-#book tr.spread td {
+.book tr.spread td {
   text-align: center;
   font: 12px var(--mono);
   color: var(--muted);
@@ -338,16 +365,19 @@ tbody tr:last-child td { border-bottom: none; }
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
-#book tr.spread b { color: var(--text); font-weight: 600; }
+.book tr.spread b { color: var(--text); font-weight: 600; }
 
-/* Phones: a tighter ladder so the names still fit. */
+/* A narrow market column (several markets side by side, or a phone): a tighter ladder so the
+   names still fit. */
+@container (max-width: 480px) {
+  .book th:nth-child(2), .book th:nth-child(4) { width: 36px; }
+  .book th:nth-child(3) { width: 76px; }
+  .book td { padding: 0 5px; font-size: 12px; }
+  .book td.price { font-size: 12px; }
+}
+
 @media (max-width: 600px) {
   .topbar, .terminal { padding-left: 16px; padding-right: 16px; }
-  #book th:nth-child(2), #book th:nth-child(4) { width: 36px; }
-  #book th:nth-child(3) { width: 76px; }
-  #book td { padding: 0 5px; font-size: 12px; }
-  #book td.price { font-size: 12px; }
-  .book-panel .panel-head .muted { display: none; }
 }
 
 /* --- Admin page ---------------------------------------------------------------------------- */

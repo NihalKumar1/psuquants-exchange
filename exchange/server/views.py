@@ -10,18 +10,44 @@ Three kinds of view:
 
 from exchange.engine import MarketStatus, Side, TradeExecuted
 
-BOOK_DEPTH = 10  # price levels shown on each side of the book
+BOOK_DEPTH = 10        # price levels shown on each side of the book...
+SHORT_BOOK_DEPTH = 5   # ...or this many when several markets share the trader's screen
 TRADE_OR_TIGHTEN = (MarketStatus.AUCTION, MarketStatus.MM_QUOTING, MarketStatus.FORCED_TRADE)
+# Markets that get their own column on the trader page (not CREATED, not SETTLED).
+RUNNING = (*TRADE_OR_TIGHTEN, MarketStatus.OPEN, MarketStatus.HALTED)
 
 
 def name_of(exchange, trader_id):
     return exchange.traders.get(trader_id, trader_id)
 
 
+# --- Which markets the trader page shows ----------------------------------------------------
+# Markets are listed in the order they were created (oldest first), which is the order of
+# exchange.markets.
+
+
+def running_market_ids(exchange):
+    """The markets that get a column on the trader page, side by side."""
+    return [market_id for market_id, market in exchange.markets.items()
+            if market.status in RUNNING]
+
+
+def started_market_ids(exchange):
+    """The markets in the positions table and the trade tape: every one that has started,
+    settled ones included."""
+    return [market_id for market_id, market in exchange.markets.items()
+            if market.status is not MarketStatus.CREATED]
+
+
+def book_depth(exchange):
+    """The full book when one market has the screen to itself, a shorter one when several share it."""
+    return BOOK_DEPTH if len(running_market_ids(exchange)) <= 1 else SHORT_BOOK_DEPTH
+
+
 # --- Public ---------------------------------------------------------------------------------
 
 
-def market_view(exchange, market_id):
+def market_view(exchange, market_id, depth=BOOK_DEPTH):
     market = exchange.markets[market_id]
     return {
         "market_id": market_id,
@@ -29,8 +55,8 @@ def market_view(exchange, market_id):
         "tick_size": market.config.tick_size,
         "max_position": market.config.max_position,
         "status": market.status.value,
-        "bids": levels_view(exchange, market, Side.BUY),
-        "asks": levels_view(exchange, market, Side.SELL),
+        "bids": levels_view(exchange, market, Side.BUY, depth),
+        "asks": levels_view(exchange, market, Side.SELL, depth),
         "best_bid": market.book.best_bid(),
         "best_ask": market.book.best_ask(),
         "last_price": market.last_price,
@@ -67,8 +93,8 @@ def tot_view(exchange, market):
     }
 
 
-def levels_view(exchange, market, side):
-    """The best BOOK_DEPTH price levels, each with its orders in time priority."""
+def levels_view(exchange, market, side, depth):
+    """The best `depth` price levels, each with its orders in time priority."""
     return [
         {
             "price": price,
@@ -78,7 +104,7 @@ def levels_view(exchange, market, side):
                 for order in orders
             ],
         }
-        for price, orders in market.book.levels(side)[:BOOK_DEPTH]
+        for price, orders in market.book.levels(side)[:depth]
     ]
 
 
@@ -164,9 +190,17 @@ def update_message(exchange, trader_id, events):
 
 
 def state_for(exchange, trader_id):
+    depth = book_depth(exchange)
     return {
         "name": exchange.traders[trader_id],  # can change if the admin renames them
-        "markets": {market_id: market_view(exchange, market_id) for market_id in exchange.markets},
+        # What the page lays out: one column per running market, and the markets that get a
+        # column in the positions table. The page draws exactly this, so the rules live here.
+        "columns": running_market_ids(exchange),
+        "table_markets": started_market_ids(exchange),
+        "book_depth": depth,
+        "markets": {
+            market_id: market_view(exchange, market_id, depth) for market_id in exchange.markets
+        },
         "me": {
             market_id: trader_view(exchange, market_id, trader_id)
             for market_id in exchange.markets

@@ -7,7 +7,8 @@ Trader messages (all JSON), on /ws:
                               "choose_side", ...}  (see Room.handle)
                               Any command may carry a "ref"; see "done" below.
   server -> browser   "welcome" + "snapshot" after joining, "error" if joining failed,
-                      "update" after every change, "rejected" (to the sender only),
+                      "update" after every change, "rejected" (to the sender only, with
+                      the command's "market_id"),
                       "opened_elsewhere" when the same trader connects from a newer tab,
                       "kicked" when the admin removes them,
                       "welcome" + "snapshot" + "reset" when the admin resets the game,
@@ -153,17 +154,20 @@ def create_app(room, admin_secret):
             return True
 
     async def run_trader_command(websocket, trader_id, message):
+        # A rejection names the market the command was for (None for e.g. cancel all
+        # everywhere), so the page can say which of the markets on screen it was in.
+        market_id = message.get("market_id")
         try:
             events = room.handle(trader_id, message)
         except (KeyError, ValueError, TypeError):
             await send(websocket, {"type": "rejected", "command": message.get("type"),
-                                   "reason": "bad message"})
+                                   "market_id": market_id, "reason": "bad message"})
             return
 
         for event in events:
             if isinstance(event, Rejected):
                 await send(websocket, {"type": "rejected", "command": event.command,
-                                       "reason": event.reason})
+                                       "market_id": market_id, "reason": event.reason})
         if any(not isinstance(event, Rejected) for event in events):
             await broadcast(events)
             await tell_admins()

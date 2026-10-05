@@ -60,6 +60,8 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   carried over with **new ids and tokens**, so the socket loop looks up `trader_of(connection)`
   on every command instead of remembering an id).
 - `exchange/server/views.py`: engine state → JSON for browsers (public, private, and admin views).
+  It also decides the trader page's layout: one column per running market (`columns`), the
+  markets in the positions table (`table_markets`), and the book depth (10, or 5 with several).
 - `exchange/server/app.py`: FastAPI + WebSocket wiring (`create_app(room, admin_secret)`, used by
   tests). Traders on `/ws`, admin on `/admin/ws`. Also runs the forced-trade timer (an asyncio
   task that ends the window when time is up; Reset cancels running timers). A trader command

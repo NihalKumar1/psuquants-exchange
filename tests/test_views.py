@@ -10,7 +10,7 @@ from exchange.server.views import (
     trader_view,
     update_message,
 )
-from helpers import ScriptedCoin, make_config, trades_in
+from helpers import ScriptedCoin, make_config, open_market, trades_in
 
 BUY, SELL = Side.BUY, Side.SELL
 
@@ -266,3 +266,78 @@ def test_the_admin_sees_how_many_have_chosen_each_side(clock):
     choices = admin_message(room)["markets"]["cars"]["choices"]
 
     assert choices == {"buy": 2, "sell": 1, "undecided": 1}  # Erin hasn't chosen
+
+
+# --- Several markets at once (milestone 5) ----------------------------------------------------
+
+
+def test_only_running_markets_get_a_column_oldest_first(ex):
+    # "cars" (created first) is open. Then one market in every other status.
+    ex.create_market(make_config("created"))
+    ex.create_market(make_config("auction"))
+    ex.start_auction("auction")
+    open_market(ex, market_id="halted")
+    ex.halt_market("halted")
+    open_market(ex, market_id="settled")
+    ex.settle_market("settled", 100)
+    (alice,) = join_all(ex, "Alice")
+
+    state = update_message(ex, alice, [])
+
+    assert state["columns"] == ["cars", "auction", "halted"]
+
+
+def test_the_positions_and_tape_tables_keep_settled_markets_but_not_created_ones(ex):
+    ex.create_market(make_config("created"))
+    open_market(ex, market_id="settled")
+    ex.settle_market("settled", 100)
+    (alice,) = join_all(ex, "Alice")
+
+    assert update_message(ex, alice, [])["table_markets"] == ["cars", "settled"]
+
+
+def test_one_running_market_shows_10_levels_each_side(ex):
+    (alice,) = join_all(ex, "Alice")
+    for price in range(1, 13):
+        ex.place_limit("cars", alice, BUY, price, 1)
+    open_market(ex, market_id="settled")
+    ex.settle_market("settled", 100)  # settled markets don't count
+
+    state = update_message(ex, alice, [])
+
+    assert state["book_depth"] == 10
+    assert len(state["markets"]["cars"]["bids"]) == 10
+
+
+def test_several_running_markets_show_5_levels_each_side(ex):
+    (alice,) = join_all(ex, "Alice")
+    for price in range(1, 13):
+        ex.place_limit("cars", alice, BUY, price, 1)
+        ex.place_limit("cars", alice, SELL, 100 + price, 1)
+    open_market(ex, market_id="homes")
+
+    state = snapshot_message(ex, alice)
+
+    assert state["book_depth"] == 5
+    assert [level["price"] for level in state["markets"]["cars"]["bids"]] == [12, 11, 10, 9, 8]
+    assert [level["price"] for level in state["markets"]["cars"]["asks"]] == [101, 102, 103, 104, 105]
+
+
+def test_no_running_market_means_no_columns_and_the_full_depth(ex):
+    ex.settle_market("cars", 100)
+    (alice,) = join_all(ex, "Alice")
+
+    state = update_message(ex, alice, [])
+
+    assert state["columns"] == []
+    assert state["book_depth"] == 10
+
+
+def test_the_admin_always_gets_10_levels(ex):
+    room = Room(code="1234", exchange=ex)
+    (alice,) = join_all(ex, "Alice")
+    for price in range(1, 13):
+        ex.place_limit("cars", alice, BUY, price, 1)
+    open_market(ex, market_id="homes")
+
+    assert len(admin_message(room)["markets"]["cars"]["bids"]) == 10
