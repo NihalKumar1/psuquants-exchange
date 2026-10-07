@@ -35,5 +35,5 @@ from .events import (
 )
 from .exchange import MAX_NAME_LENGTH, Exchange
 from .market import Market
-from .models import MarketConfig, MarketStatus, Order, Side
+from .models import MarketConfig, MarketStatus, Order, PricePoint, Side
 from .positions import PnL, Position, mark_price

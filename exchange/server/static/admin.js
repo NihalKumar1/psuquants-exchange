@@ -341,11 +341,38 @@ document.getElementById("toggle-joining").addEventListener("click", () =>
   send({ type: state.joining_locked ? "unlock_joining" : "lock_joining" }));
 
 document.getElementById("reset-game").addEventListener("click", () => {
-  const question = "Reset the game? This permanently deletes every market, trade and position " +
-    "(there is no export yet). Traders who are connected now stay in, under the same names, " +
-    "starting flat. The room code stays the same.";
+  const warning = state && state.unexported
+    ? "You haven't exported this game since the last change.\n\n"
+    : "";
+  const question = warning + "Reset the game? This permanently deletes every market, trade " +
+    "and position. Traders who are connected now stay in, under the same names, starting " +
+    "flat. The room code stays the same.";
   if (confirm(question)) send({ type: "reset" });
 });
+
+document.getElementById("export-game").addEventListener("click", exportGame);
+
+async function exportGame() {
+  // Download the whole game as a zip. A plain link can't send the password, so the page
+  // fetches the file with the password in a header, then hands it to the browser to save.
+  try {
+    const response = await fetch("/admin/export", { headers: { "X-Admin-Secret": secret } });
+    if (!response.ok) {
+      showMessage(response.status === 403 ? "Export refused: wrong admin secret." : "Export failed.");
+      return;
+    }
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="([^"]+)"/);
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(await response.blob());
+    link.download = match ? match[1] : "psuquants-game.zip";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);  // after the browser has saved it
+    showMessage("");
+  } catch {
+    showMessage("Export failed. Check the connection and try again.");
+  }
+}
 
 document.getElementById("log-out").addEventListener("click", () => logOut(""));
 

@@ -24,6 +24,17 @@ Admin messages, on /admin/ws:
   server -> browser   "admin_welcome", then "admin_state" after every change,
                       "admin_error" when a command is refused, "error" if the secret is wrong.
 
+Review page messages (the projector), on /review/ws:
+  browser -> server   first:  {"type": "admin_login", "secret"}  (the admin password)
+                      then:   {"type": "review_pick", "market_id", "trader_id"}
+  server -> browser   "review_welcome", then "review_state" (the pickers, and the review of the
+                      picked trader and market) right away, after each pick, and after changes,
+                      at most once per review_interval seconds: the chart can hold thousands
+                      of points, too many to resend after every one of ~30 commands a second.
+
+Export: GET /admin/export with the admin password in an "X-Admin-Secret" header downloads the
+whole game as a zip (see export.py).
+
 The forced-trade timer also lives here: when the admin starts a forced-trade window, the server
 waits out the timer and then ends the window itself, as if it were one more command.
 """
@@ -34,8 +45,8 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Header, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from exchange.engine import (
@@ -48,7 +59,8 @@ from exchange.engine import (
     TraderKicked,
 )
 
-from .views import admin_message, snapshot_message, update_message
+from .export import export_filename, export_zip
+from .views import admin_message, review_state_message, snapshot_message, update_message
 
 STATIC_DIR = Path(__file__).parent / "static"
 SEND_TIMEOUT_SECONDS = 5  # a browser this slow to accept a message is treated as gone
@@ -62,14 +74,18 @@ NO_CACHE = {"Cache-Control": "no-cache"}
 ADMIN_ONLY_EVENTS = (InfoDropMarked, JoiningLocked, JoiningUnlocked)
 
 
-def create_app(room, admin_secret):
-    timers = set()  # running forced-trade timers (kept here so they aren't garbage collected)
+def create_app(room, admin_secret, review_interval=1.0):
+    # Running tasks, kept here so they aren't garbage collected:
+    timers = set()  # forced-trade timers
+    review_pushes = set()  # a scheduled push to the review pages (at most one at a time)
+    review_push_pending = False
+    last_review_push = 0.0  # event loop time of the last push
 
     @asynccontextmanager
     async def lifespan(app):
         yield
-        for timer in list(timers):  # the server is stopping: don't leave timers behind
-            timer.cancel()
+        for task in list(timers | review_pushes):  # the server is stopping: leave nothing behind
+            task.cancel()
 
     app = FastAPI(lifespan=lifespan)
     app.state.room = room
@@ -86,6 +102,10 @@ def create_app(room, admin_secret):
     @app.get("/admin")
     def admin_page():
         return FileResponse(STATIC_DIR / "admin.html", headers=NO_CACHE)
+
+    @app.get("/review")
+    def review_page():
+        return FileResponse(STATIC_DIR / "review.html", headers=NO_CACHE)
 
     # --- Traders --------------------------------------------------------------------------
 
@@ -274,12 +294,80 @@ def create_app(room, admin_secret):
             await close(connection)
 
     async def tell_admins():
-        """Send every admin page the latest admin state."""
+        """Send every admin page the latest admin state (and soon, every review page too)."""
         message = admin_message(room)
         for connection in list(room.admins):
             if not await send(connection, message):
                 room.admins.discard(connection)
                 await close(connection)
+        tell_reviewers()
+
+    @app.get("/admin/export")
+    async def export(x_admin_secret: str = Header(default="")):
+        """Download the whole game as a zip. The admin page sends the password as a header."""
+        if not is_admin_secret(x_admin_secret, admin_secret):
+            return Response(status_code=403)
+        async with lock:
+            data = export_zip(room.exchange)
+            filename = export_filename(room.exchange.clock())
+            room.mark_exported()
+            await tell_admins()  # Reset stops warning that the game isn't exported
+        return Response(data, media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+    # --- Review page (the projector) ------------------------------------------------------
+
+    @app.websocket("/review/ws")
+    async def review_socket(websocket: WebSocket):
+        await websocket.accept()
+        try:
+            message = parse(await websocket.receive_text())
+            if not is_admin_login(message, admin_secret):
+                await send(websocket, {"type": "error", "reason": "wrong admin secret"})
+                await close(websocket)
+                return
+
+            async with lock:
+                room.reviewers[websocket] = None  # nothing picked yet
+                await send(websocket, {"type": "review_welcome"})
+                await send(websocket, review_state_message(room, None))
+
+            while True:
+                message = parse(await websocket.receive_text())
+                if message.get("type") != "review_pick":
+                    continue
+                market_id, trader_id = message.get("market_id"), message.get("trader_id")
+                pick = (market_id, trader_id) if is_text(market_id) and is_text(trader_id) else None
+                async with lock:
+                    room.reviewers[websocket] = pick
+                    await send(websocket, review_state_message(room, pick))
+        except WebSocketDisconnect:
+            pass
+        finally:
+            room.reviewers.pop(websocket, None)
+
+    def tell_reviewers():
+        """Something changed: push the review pages the latest state, but no more often than
+        once per review_interval. Changes in between all go out in the next push."""
+        nonlocal review_push_pending
+        if review_push_pending or not room.reviewers:
+            return
+        review_push_pending = True
+        push = asyncio.create_task(push_to_reviewers_soon())
+        review_pushes.add(push)
+        push.add_done_callback(review_pushes.discard)
+
+    async def push_to_reviewers_soon():
+        nonlocal review_push_pending, last_review_push
+        loop = asyncio.get_running_loop()
+        await asyncio.sleep(max(0.0, last_review_push + review_interval - loop.time()))
+        async with lock:
+            review_push_pending = False  # any change from now on schedules the next push
+            last_review_push = loop.time()
+            for connection, pick in list(room.reviewers.items()):
+                if not await send(connection, review_state_message(room, pick)):
+                    room.reviewers.pop(connection, None)
+                    await close(connection)
 
     return app
 
@@ -294,11 +382,20 @@ class NoCacheStaticFiles(StaticFiles):
 
 
 def is_admin_login(message, admin_secret):
-    """True if the message is a login with the right secret (compared in constant time)."""
-    secret = message.get("secret")
-    if message.get("type") != "admin_login" or not isinstance(secret, str):
+    """True if the message is a login with the right secret."""
+    return (message.get("type") == "admin_login"
+            and is_admin_secret(message.get("secret"), admin_secret))
+
+
+def is_admin_secret(secret, admin_secret):
+    """True if `secret` is the admin secret (compared in constant time)."""
+    if not is_text(secret):
         return False
     return secrets.compare_digest(secret.encode(), admin_secret.encode())
+
+
+def is_text(value):
+    return isinstance(value, str)
 
 
 def parse(text):

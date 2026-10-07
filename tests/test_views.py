@@ -5,6 +5,8 @@ from exchange.server.room import Room
 from exchange.server.views import (
     admin_message,
     market_view,
+    review_message,
+    review_options,
     snapshot_message,
     trade_view,
     trader_view,
@@ -341,3 +343,139 @@ def test_the_admin_always_gets_10_levels(ex):
     open_market(ex, market_id="homes")
 
     assert len(admin_message(room)["markets"]["cars"]["bids"]) == 10
+
+
+# --- The review screen (milestone 6) ----------------------------------------------------------
+
+
+def test_review_options_list_started_markets_and_every_trader_including_kicked(ex):
+    ex.create_market(make_config("created"))
+    open_market(ex, market_id="settled")
+    ex.settle_market("settled", 100)
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.kick(bob)
+
+    options = review_options(ex)
+
+    assert options["markets"] == [
+        {"market_id": "cars", "title": "Test market cars", "status": "open"},
+        {"market_id": "settled", "title": "Test market settled", "status": "settled"},
+    ]
+    assert options["traders"] == [
+        {"trader_id": alice, "name": "Alice", "kicked": False},
+        {"trader_id": bob, "name": "Bob", "kicked": True},
+    ]
+
+
+def test_review_rows_use_current_names_and_show_running_numbers(ex, clock):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", bob, SELL, 40, 10)
+    clock.set("09:31:00")
+    ex.take("cars", alice, BUY, 40, 4)
+    ex.rename(bob, "Robert")
+
+    review = review_message(ex, "cars", alice)
+
+    assert review["type"] == "review"
+    assert (review["market_id"], review["title"], review["status"]) == (
+        "cars", "Test market cars", "open")
+    assert (review["trader_id"], review["trader"]) == (alice, "Alice")
+    assert review["rows"] == [{
+        "time": clock.now.isoformat(), "side": "buy", "price": 40, "size": 4,
+        "counterparty": "Robert", "position": 4, "realized": 0, "mtm": 0, "edge": None,
+        "forced": False,
+    }]
+    assert review["total_edge"] is None
+    assert review["settlement_value"] is None
+
+
+def test_review_chart_runs_from_the_open_to_now_while_trading(ex, clock):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", alice, BUY, 30, 5)
+    clock.set("09:31:00")
+    ex.place_limit("cars", bob, SELL, 40, 5)
+    clock.set("09:32:00")
+    ex.take("cars", alice, BUY, 40, 2)
+    clock.set("09:40:00")
+
+    chart = review_message(ex, "cars", alice)["chart"]
+
+    assert chart["start"] == clock.now.replace(minute=30).isoformat()
+    assert chart["end"] == clock.now.isoformat()
+    assert chart["points"] == [
+        {"time": clock.now.replace(minute=31).isoformat(), "mark": 35, "last": None},
+        {"time": clock.now.replace(minute=32).isoformat(), "mark": 35, "last": 40},
+    ]
+    assert chart["fills"] == [
+        {"time": clock.now.replace(minute=32).isoformat(), "price": 40, "side": "buy"}]
+
+
+def test_review_chart_ends_at_settlement_and_rows_get_their_edge(ex, clock):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", bob, SELL, 40, 10)
+    ex.take("cars", alice, BUY, 40, 4)
+    clock.set("09:50:00")
+    ex.settle_market("cars", 45)
+    clock.set("10:15:00")
+
+    review = review_message(ex, "cars", alice)
+
+    assert review["chart"]["end"] == clock.now.replace(hour=9, minute=50).isoformat()
+    assert review["settlement_value"] == 45
+    assert [row["edge"] for row in review["rows"]] == [20]
+    assert review["total_edge"] == 20
+    assert review["rows"][0]["mtm"] == 0  # the mark right after the fill, not the settlement
+
+
+def test_review_shows_only_the_info_drops_inside_the_charts_time_span(clock):
+    ex = Exchange(clock=clock)
+    ex.create_market(make_config())
+    (alice,) = join_all(ex, "Alice")
+    clock.set("09:31:00")
+    ex.mark_info_drop("before the open")
+    clock.set("09:32:00")
+    ex.open_market("cars")
+    clock.set("09:33:00")
+    ex.mark_info_drop("during trading")
+    clock.set("09:34:00")
+    ex.settle_market("cars", 100)
+    clock.set("09:35:00")
+    ex.mark_info_drop("after settling")
+
+    review = review_message(ex, "cars", alice)
+
+    assert review["info_drops"] == [
+        {"time": clock.now.replace(minute=33).isoformat(), "note": "during trading"}]
+
+
+def test_review_of_a_market_still_in_trade_or_tighten_has_no_chart_yet(clock):
+    ex = tot_exchange(clock)
+    (alice,) = join_all(ex, "Alice")
+    ex.start_auction("cars")
+
+    review = review_message(ex, "cars", alice)
+
+    assert review["chart"] is None
+    assert review["rows"] == []
+    assert review["info_drops"] == []
+
+
+def test_review_includes_forced_trades_marked_as_forced(clock):
+    ex = tot_exchange(clock, SELL)
+    mm, alice = join_all(ex, "Mm", "Alice")
+    run_to_forced_trade(ex, mm)
+    ex.end_forced_trade("cars", ended_by="timer")  # Alice gets a random SELL at 100
+
+    review = review_message(ex, "cars", mm)
+
+    assert [(row["side"], row["price"], row["counterparty"], row["forced"])
+            for row in review["rows"]] == [("buy", 100, "Alice", True)]
+    assert review["chart"]["start"] == clock.now.isoformat()
+
+
+def test_the_admin_state_says_whether_the_game_has_unexported_changes(ex):
+    room = Room(code="1234", exchange=ex)
+    assert admin_message(room)["unexported"] is True  # a market was opened
+
+    room.mark_exported()
+    assert admin_message(room)["unexported"] is False
