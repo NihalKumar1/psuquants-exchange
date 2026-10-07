@@ -18,6 +18,8 @@ uvicorn exchange.server.main:app --workers 1
 
 - Trader page: http://localhost:8000
 - Admin page: http://localhost:8000/admin (log in with the password above)
+- Review screen, for the projector: http://localhost:8000/review (the same password). Pick a
+  market and a trader to walk through their trades; it updates live.
 - The room code is printed in the console and shown on the admin page.
 
 ## Deploy to Render (free plan)
@@ -115,12 +117,17 @@ Worth knowing:
 - [ ] If more than 15 minutes might pass with no one using the site (e.g. a long talk), reload
       the admin page once in a while so Render doesn't put it to sleep.
 - [ ] Settle each market at the true value.
-- [ ] Between games, **Reset game** starts a fresh one. Everyone connected stays in under the
-      same name, and the room code doesn't change.
+- [ ] To walk through a student's trades, open **Review screen** (top of the admin page) on the
+      projector and pick the market and the student. Keep the admin page itself off the
+      projector: it shows everyone's PnL.
+- [ ] Between games, press **Export** (it downloads a zip), then **Reset game** to start a fresh
+      one. Everyone connected stays in under the same name, and the room code doesn't change.
+      Reset warns you if the game hasn't been exported since the last change.
 
 **At the end**
-- [ ] There is **no export yet** (milestone 6). Take screenshots of anything you want to keep
-      before resetting or leaving. The game disappears when the service restarts or sleeps.
+- [ ] Press **Export** on the admin page and keep the zip: trades.csv, orders.csv, events.csv
+      (times in US Eastern, traders by name) and events.json (the full event log). The game
+      disappears when the service restarts or sleeps.
 
 **If the server restarts mid-meeting** (every page loses its connection at once)
 - Everything from the current game is gone, and there is a **new room code**.

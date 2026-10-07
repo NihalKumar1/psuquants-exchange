@@ -142,6 +142,16 @@ button.icon:hover { color: var(--ask); }
 .pill.auction, .pill.mm_quoting, .pill.forced_trade { color: var(--accent); background: var(--accent-soft); }
 .me { display: flex; align-items: center; gap: 22px; margin-left: auto; flex-wrap: wrap; }
 .me button { font-size: 12px; padding: 7px 10px; }
+/* A link that looks like a ghost button (the admin page's "Review screen"). */
+a.button.ghost {
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 10px;
+  font: 500 12px system-ui, sans-serif;
+  text-decoration: none;
+}
+a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
 .stat { display: flex; flex-direction: column; gap: 1px; }
 .stat small, .tile small {
   color: var(--muted);
@@ -462,3 +472,61 @@ th.market-head-cell {
   color: var(--text);
 }
 #traders tr.kicked td { color: var(--muted); }
+
+/* --- Review page (the projector) ----------------------------------------------------------- */
+
+.picker { display: flex; flex-direction: column; gap: 2px; }
+.picker small {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+select {
+  min-width: 180px;
+  max-width: 320px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 6px 8px;
+  font: 14px system-ui, sans-serif;
+}
+select:focus { outline: none; border-color: var(--accent); }
+
+.review { display: flex; flex-direction: column; gap: 14px; padding: 0 20px 20px; }
+.chart-head { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+.legend span { display: flex; align-items: center; gap: 6px; }
+.key { display: inline-block; width: 18px; height: 0; border-top: 2px solid; }
+.key.mark { border-color: var(--accent); }
+.key.last { border-color: var(--muted); border-top-style: dashed; }
+.key.drop { border-color: #eab308; border-top-style: dashed; }
+.key.settle { border-color: var(--text); }
+
+#chart { width: 100%; }
+.chart { display: block; }
+.chart .grid { stroke: var(--line); }
+.chart .axis { fill: var(--muted); font: 11px var(--mono); }
+.chart .line { fill: none; stroke-linejoin: round; }
+.chart .line.mark { stroke: var(--accent); stroke-width: 2.5; }
+.chart .line.last { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.chart .fill.buy { fill: var(--bid); }
+.chart .fill.sell { fill: var(--ask); }
+.chart .fill { stroke: var(--bg); stroke-width: 1; }
+.chart .drop { stroke: #eab308; stroke-width: 1.5; stroke-dasharray: 4 4; }
+.chart .drop-note { fill: #eab308; font-size: 11px; }
+.chart .settle { stroke: var(--text); stroke-width: 1.5; }
+.chart .settle-note { fill: var(--text); font: 600 12px var(--mono); }
+
+/* Bigger text than the trading pages, for reading from the back of the room. */
+#fills td { font-size: 15px; padding: 8px 10px; }
+#fills th { font-size: 12px; padding: 0 10px 8px; }
+#fills tr.forced td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+#fills tr.drop td { color: #eab308; background: rgba(234, 179, 8, 0.08); white-space: normal; }
+#fills tr.total td { font-weight: 700; border-top: 1px solid var(--line); }
+
+@media (max-width: 600px) {
+  .review { padding-left: 16px; padding-right: 16px; }
+  select { min-width: 0; }
+}

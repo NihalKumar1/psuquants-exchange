@@ -32,7 +32,7 @@ from .events import (
     WidthsWithdrawn,
     WidthSubmitted,
 )
-from .models import MarketStatus, Order, Side, is_whole_number
+from .models import MarketStatus, Order, PricePoint, Side, is_whole_number
 from .positions import PnL, Position, mark_price
 
 
@@ -46,6 +46,11 @@ class Market:
         self.positions = {}  # trader_id -> Position
         self.last_price = None  # price of the most recent trade
         self.settlement_value = None
+        self.opened_at = None  # when continuous trading started
+        self.settled_at = None
+        # For the review chart: a PricePoint each time the mark or last price changes (until
+        # settlement; the settlement value is drawn as a line of its own).
+        self.price_history = []
 
         # Trade or Tighten (only used if the admin starts the auction instead of opening directly)
         self.widths = []  # (trader_id, width) in the order submitted; each narrower than the last
@@ -302,19 +307,37 @@ class Market:
     # --- Apply: event -> new state ---------------------------------------------------------
 
     def apply(self, event):
+        self._change_state(event)
+        self._record_price(event)
+
+    def _record_price(self, event):
+        """Add a PricePoint if this event changed the mark or the last price."""
+        if self.status is MarketStatus.SETTLED:
+            return
+        previous = self.price_history[-1] if self.price_history else None
+        before = (previous.mark, previous.last_price) if previous else (None, None)
+        if (self.mark(), self.last_price) != before:
+            self.price_history.append(PricePoint(seq=event.seq, ts=event.ts, mark=self.mark(),
+                                                 last_price=self.last_price))
+
+    def _change_state(self, event):
         if isinstance(event, MarketEdited):
             self.config = replace(
                 self.config, title=event.title, tick_size=event.tick_size,
                 max_position=event.max_position, forced_trade_size=event.forced_trade_size,
                 forced_trade_seconds=event.forced_trade_seconds,
             )
-        elif isinstance(event, (MarketOpened, MarketResumed)):
+        elif isinstance(event, MarketOpened):
+            self.status = MarketStatus.OPEN
+            self.opened_at = event.ts
+        elif isinstance(event, MarketResumed):
             self.status = MarketStatus.OPEN
         elif isinstance(event, MarketHalted):
             self.status = MarketStatus.HALTED
         elif isinstance(event, MarketSettled):
             self.status = MarketStatus.SETTLED
             self.settlement_value = event.settlement_value
+            self.settled_at = event.ts
         elif isinstance(event, OrderAccepted):
             self.orders[event.order_id] = Order(
                 order_id=event.order_id, market_id=event.market_id, trader_id=event.trader_id,

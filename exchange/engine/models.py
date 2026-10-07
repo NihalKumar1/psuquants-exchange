@@ -1,6 +1,7 @@
 """Basic building blocks: sides, market status, market settings, and orders."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 
 
@@ -52,6 +53,17 @@ class Order:
     size: int  # size accepted (after any clipping)
     remaining: int
     cancelled: bool = False
+
+
+@dataclass(frozen=True)
+class PricePoint:
+    """The market's mark and last price as they were right after event number `seq`.
+    A market keeps one each time either of them changes, for the review chart."""
+
+    seq: int
+    ts: datetime
+    mark: float | None
+    last_price: int | None
 
 
 def is_whole_number(value):

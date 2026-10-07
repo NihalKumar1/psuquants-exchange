@@ -2,13 +2,16 @@
 
 The engine knows traders by id ("t1"); everything shown on screen uses their names.
 
-Three kinds of view:
+Four kinds of view:
 - public (market_view, trade_view): the same for everyone, so no one's PnL is in them;
 - private (trader_view, total_view): one trader's own orders and PnL, sent only to them;
-- admin (admin_message): everyone's positions and PnL, sent only to the admin page.
+- admin (admin_message): everyone's positions and PnL, sent only to the admin page;
+- review (review_state_message): one trader's fills and PnL for the projected review page,
+  which needs the admin password.
 """
 
 from exchange.engine import MarketStatus, Side, TradeExecuted
+from exchange.engine.review import total_edge, trader_fills
 
 BOOK_DEPTH = 10        # price levels shown on each side of the book...
 SHORT_BOOK_DEPTH = 5   # ...or this many when several markets share the trader's screen
@@ -220,6 +223,7 @@ def admin_message(room):
         "type": "admin_state",
         "room_code": room.code,
         "joining_locked": exchange.joining_locked,
+        "unexported": room.has_unexported_changes(),  # Reset warns if this is True
         "info_drops": [
             {"time": drop.ts.isoformat(), "note": drop.note} for drop in exchange.info_drops
         ],
@@ -257,3 +261,97 @@ def choice_counts(exchange, market):
              for trader_id in exchange.forced_trade_participants(market.market_id)]
     return {"buy": sides.count(Side.BUY), "sell": sides.count(Side.SELL),
             "undecided": sides.count(None)}
+
+
+# --- Review ---------------------------------------------------------------------------------
+
+
+def review_state_message(room, pick):
+    """Everything the review page shows: the pickers, and the review for the current pick
+    ((market_id, trader_id), or None if nothing valid is picked)."""
+    exchange = room.exchange
+    review = None
+    if pick is not None:
+        market_id, trader_id = pick
+        if market_id in exchange.markets and trader_id in exchange.traders:
+            review = review_message(exchange, market_id, trader_id)
+    return {"type": "review_state", "options": review_options(exchange), "review": review}
+
+
+def review_options(exchange):
+    """What the review page's pickers offer: every market that has started (oldest first), and
+    every trader who joined, kicked ones included."""
+    return {
+        "markets": [
+            {"market_id": market_id, "title": exchange.markets[market_id].config.title,
+             "status": exchange.markets[market_id].status.value}
+            for market_id in started_market_ids(exchange)
+        ],
+        "traders": [
+            {"trader_id": trader_id, "name": name, "kicked": trader_id in exchange.kicked}
+            for trader_id, name in exchange.traders.items()
+        ],
+    }
+
+
+def review_message(exchange, market_id, trader_id):
+    """One trader's fills in one market, the price chart, and the info drops along the way."""
+    market = exchange.markets[market_id]
+    rows = trader_fills(market, trader_id)
+    return {
+        "type": "review",
+        "market_id": market_id,
+        "title": market.config.title,
+        "status": market.status.value,
+        "trader_id": trader_id,
+        "trader": name_of(exchange, trader_id),
+        "settlement_value": market.settlement_value,
+        "rows": [
+            {
+                "time": row.trade.ts.isoformat(),
+                "side": row.side.value,
+                "price": row.trade.price,
+                "size": row.trade.size,
+                "counterparty": name_of(exchange, row.counterparty_id),
+                "position": row.position,
+                "realized": row.realized,
+                "mtm": row.unrealized,
+                "edge": row.edge,
+                "forced": row.trade.forced,
+            }
+            for row in rows
+        ],
+        "total_edge": total_edge(market, rows),
+        **chart_view(exchange, market, rows),
+    }
+
+
+def chart_view(exchange, market, rows):
+    """The price chart, from the open to settlement (or now while still trading), and the info
+    drops in that time span. No chart before the market opens."""
+    if market.opened_at is None:
+        return {"chart": None, "info_drops": []}
+    start = market.opened_at
+    end = market.settled_at or exchange.clock()
+    return {
+        "chart": {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            # The history only has points from the forced trades (at the opening time) up to
+            # settlement, so all of it is inside the span.
+            "points": [
+                {"time": point.ts.isoformat(), "mark": point.mark, "last": point.last_price}
+                for point in market.price_history
+            ],
+            "fills": [
+                {"time": row.trade.ts.isoformat(), "price": row.trade.price,
+                 "side": row.side.value}
+                for row in rows
+            ],
+        },
+        "info_drops": [
+            {"time": drop.ts.isoformat(), "note": drop.note}
+            for drop in exchange.info_drops
+            if start <= drop.ts <= end
+        ],
+    }

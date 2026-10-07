@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review · PSU Quants Exchange</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Login screen: the admin password (remembered, shared with the admin page). -->
+<section id="login-screen" class="join">
+  <div class="join-card">
+    <div class="wordmark">PSU QUANTS <span>EXCHANGE</span></div>
+    <p class="tagline">Review screen</p>
+    <form id="login-form" class="stack-form">
+      <label>Admin secret
+        <input id="login-secret" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit" class="primary">Log in</button>
+      <p id="login-error" class="error"></p>
+    </form>
+  </div>
+</section>
+
+<!-- Review screen, for the projector: one trader's trades in one market. -->
+<section id="review-screen" hidden>
+  <header class="topbar">
+    <div class="wordmark">PSU QUANTS <span>EXCHANGE</span> · REVIEW</div>
+    <label class="picker"><small>Market</small><select id="pick-market"></select></label>
+    <label class="picker"><small>Trader</small><select id="pick-trader"></select></label>
+    <span id="market-status" class="pill" hidden></span>
+    <div class="me">
+      <div class="stat" id="settled-stat" hidden><small>Settled at</small><b id="settled-value"></b></div>
+      <button id="log-out" type="button" class="ghost">Log out</button>
+    </div>
+  </header>
+  <p id="message"></p>
+
+  <main class="review">
+    <section class="panel">
+      <div class="chart-head">
+        <h2>Price</h2>
+        <div class="legend">
+          <span><i class="key mark"></i>Mark</span>
+          <span><i class="key last"></i>Last price</span>
+          <span><b class="up">▲</b> Buy</span>
+          <span><b class="down">▼</b> Sell</span>
+          <span><i class="key drop"></i>Info drop</span>
+          <span><i class="key settle"></i>Settlement</span>
+        </div>
+      </div>
+      <div id="chart"></div>
+    </section>
+
+    <section class="panel">
+      <h2 id="fills-heading">Trades</h2>
+      <div class="scroll-x">
+        <table id="fills">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</section>
+
+<script src="/static/common.js"></script>
+<script src="/static/review.js"></script>
+</body>
+</html>

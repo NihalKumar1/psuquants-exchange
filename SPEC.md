@@ -104,6 +104,7 @@ The admin picks a trader and a market. The screen shows:
 10. During the game, do traders see a leaderboard or other people's PnL, or only their own?
    - **ANSWERED:** Traders see their own PnL plus **everyone's positions**. Other traders' PnL is never sent to a trader's browser.
 11. Review screen: fills only, or also orders placed and cancelled?
+   - **ANSWERED (M6):** **Fills only** (forced trades included). Orders and rejections are in the export.
 12. Crash recovery on free hosting: which approach? (a) The admin browser tab mirrors the event log and there is a "restore from file" button, (b) a free external database, or (c) accept the risk.
    - **Not in milestone 3** (decided 2026-09-28). Still open for a later milestone.
    - **Not in milestone 7 either** (decided 2026-09-28): for now we **accept the risk**. The README checklist says what to do if Render restarts mid-meeting.
@@ -184,7 +185,7 @@ The admin picks a trader and a market. The screen shows:
 63. Traders see the MM's bid and offer **as soon as the MM submits it**, before the window starts.
 
 ### Answered during milestone 7 planning (2026-09-28)
-Milestones 5 and 6 are skipped for now. **Reset** moves from M6 into M7 (without export, which stays in M6), so the load-test bots can be cleared off the live server.
+Milestones 5 and 6 are skipped for now *(both done since)*. **Reset** moves from M6 into M7 (without export, which stays in M6), so the load-test bots can be cleared off the live server.
 64. Reset is an admin **"Reset game"** button with an **OK/Cancel dialog**. It clears every market, trade, position and info drop, and the event log, and it **unlocks joining**.
 65. The **room code stays the same** after a reset.
 66. Traders **connected** at the moment of reset are **re-added automatically** under the same names (starting flat, in their old join order); their browsers stay logged in. **Offline** traders are not carried over and their old tokens stop working; they re-join by typing name + code.
@@ -227,6 +228,21 @@ Errors used to stay on screen until the next reconnect, and were easy to miss.
 94. **"Cancel all (this market)" stays in each market's column**, under its PnL tiles.
 95. The panel lists orders in **running markets only** (the ones with a column). Orders frozen in a settled market aren't listed.
 96. It is **one table with a Market column** (Market | Side | Price | Size | ✕): markets oldest first, and within a market bids then offers, best price first.
+
+### Answered during milestone 6 planning (2026-10-06)
+97. The review screen is a **separate `/review` page**, protected by the admin password (remembered like `/admin`). The trader and market are picked **on that page**.
+98. The review screen is **live**: it updates while the market trades (at most once a second, because the chart can hold thousands of points).
+99. "MTM PnL after each trade" uses the mark (mid, or last price if a side is empty) **right after that fill**, before any unfilled part of the same order rests.
+100. The price chart is **hand-drawn SVG**, with no chart library.
+101. The chart's time axis runs from the market's **open** (right after the forced trades print) to **settlement, or now** while it's still trading.
+102. A market's chart and trade list show the info drops **inside that time span**.
+103. Once settled, the chart also shows a **settlement line** (horizontal, at the true value). Nothing else is added beyond the spec.
+104. The trader picker lists **everyone who joined**, including kicked traders and traders with no fills in that market. The market picker lists markets that have started.
+105. The review page uses the **same dark theme** as the rest of the site.
+106. Export is **one zip** with trades.csv, orders.csv, events.csv and events.json, from an **Export** button on the admin page.
+107. Exported times are **US Eastern**.
+108. Exports use **names everywhere** (current names, Q29). In events.json, names **replace** the ids in place (`"buyer_id": "Alice"`).
+109. The Reset dialog **warns** when the game hasn't been exported since the last change (people only joining doesn't count as a change).
 
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.

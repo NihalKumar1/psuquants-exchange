@@ -5,14 +5,16 @@ never put in the event log:
 - the room code students type to join,
 - secret tokens that let a browser rejoin as the same trader after a refresh or Wi-Fi drop,
 - the live connection for each trader (at most one; the newest tab wins),
-- the live admin connections (any number of admin tabs).
+- the live admin connections (any number of admin tabs),
+- the live review page connections, each with the trader and market it is showing,
+- how much of the log has been exported (so Reset can warn about a game not yet exported).
 
 Nothing here knows about WebSockets: a "connection" is whatever object the caller passes in.
 """
 
 import secrets
 
-from exchange.engine import Exchange, MarketConfig, Side
+from exchange.engine import Exchange, MarketConfig, Side, TraderJoined
 
 
 def new_room_code():
@@ -27,6 +29,20 @@ class Room:
         self.tokens = {}  # token -> trader_id
         self.connections = {}  # trader_id -> live connection
         self.admins = set()  # live admin connections
+        self.reviewers = {}  # live review page connection -> (market_id, trader_id) or None
+        self.exported_seq = 0  # how many events the last export had
+
+    # --- Export ---------------------------------------------------------------------------
+
+    def mark_exported(self):
+        """Remember that everything in the log so far has been exported."""
+        self.exported_seq = len(self.exchange.events)
+
+    def has_unexported_changes(self):
+        """True if something happened since the last export. People joining doesn't count:
+        a game where nothing else happened has nothing worth keeping."""
+        return any(not isinstance(event, TraderJoined)
+                   for event in self.exchange.events[self.exported_seq:])
 
     # --- Joining --------------------------------------------------------------------------
 
@@ -110,6 +126,9 @@ class Room:
         self.exchange = Exchange(clock=old.clock, rng=old.rng)
         self.connections = {}
         self.tokens = {}
+        self.exported_seq = 0
+        for reviewer in self.reviewers:
+            self.reviewers[reviewer] = None  # the picked market and trader are gone
 
         carried = []
         for old_id, name in old.traders.items():  # join order
