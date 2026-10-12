@@ -66,6 +66,9 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
 - `exchange/server/views.py`: engine state → JSON for browsers (public, private, and admin views).
   It also decides the trader page's layout: one column per running market (`columns`), the
   markets in the positions table (`table_markets`), and the book depth (10, or 5 with several).
+  Each update also carries `my_fills`: the trader's own fill alerts, with the text already
+  written ("You bought 5 of Cars at 36, now LONG 5") and a colour (buy/sell/even). The page
+  shows it in the banner and flashes the market's column and Position tile (SPEC Q110–Q118).
 - `exchange/server/app.py`: FastAPI + WebSocket wiring (`create_app(room, admin_secret)`, used by
   tests). Traders on `/ws`, admin on `/admin/ws`. Also runs the forced-trade timer (an asyncio
   task that ends the window when time is up; Reset cancels running timers). A trader command

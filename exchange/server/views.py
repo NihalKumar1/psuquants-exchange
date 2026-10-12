@@ -189,7 +189,87 @@ def update_message(exchange, trader_id, events):
         "new_trades": [
             trade_view(exchange, event) for event in events if isinstance(event, TradeExecuted)
         ],
+        "my_fills": my_fills(exchange, trader_id, events),
     }
+
+
+# --- Fill alerts ----------------------------------------------------------------------------
+
+
+def my_fills(exchange, trader_id, events):
+    """One alert per market where this trader just got filled, ready for the page to show:
+    {"market_id", "text": "You bought 5 of Cars at 36, now LONG 5", "colour": "buy"}.
+
+    All of a trader's fills in one command make one alert (Q114). The colour follows the net
+    amount: more bought is "buy" (green), more sold is "sell" (red), equal is "even" (Q115, Q117).
+    """
+    bought = {}  # market_id -> the prices and sizes this trader bought, e.g. [(36, 20), (37, 5)]
+    sold = {}
+    for event in events:
+        if not isinstance(event, TradeExecuted):
+            continue
+        if event.buyer_id == trader_id:
+            bought.setdefault(event.market_id, []).append((event.price, event.size))
+        if event.seller_id == trader_id:
+            sold.setdefault(event.market_id, []).append((event.price, event.size))
+
+    alerts = []
+    for market_id, market in exchange.markets.items():
+        buys = bought.get(market_id, [])
+        sells = sold.get(market_id, [])
+        if not buys and not sells:
+            continue
+        title = market.config.title
+        if buys and sells:
+            what = f"bought {fills_text(buys, title)} and sold {fills_text(sells)}"
+        elif buys:
+            what = f"bought {fills_text(buys, title)}"
+        else:
+            what = f"sold {fills_text(sells, title)}"
+        net = total_size(buys) - total_size(sells)
+        alerts.append({
+            "market_id": market_id,
+            "text": f"You {what}, now {position_text(market.position(trader_id).size)}",
+            "colour": "buy" if net > 0 else "sell" if net < 0 else "even",
+        })
+    return alerts
+
+
+def total_size(fills):
+    return sum(size for _, size in fills)
+
+
+def fills_text(fills, title=None):
+    """"25 of Cars at avg 36.2": "avg" only when the prices differ (Q118). The title is left out
+    for the second side of a two-sided alert ("… and sold 10 at 110")."""
+    size = total_size(fills)
+    of_title = f" of {title}" if title is not None else ""
+    prices = {price for price, _ in fills}
+    if len(prices) == 1:
+        return f"{size:,}{of_title} at {prices.pop():,}"
+    value = sum(price * size for price, size in fills)
+    return f"{size:,}{of_title} at avg {average_text(value, size)}"
+
+
+def average_text(value, size):
+    """value / size with at most 1 decimal, cut towards zero rather than rounded (Q116):
+    905 / 25 -> "36.2", 145 / 4 (36.25) -> "36.2", -143 / 4 (-35.75) -> "-35.7", 72 / 2 -> "36".
+
+    Whole numbers only, so there is no floating-point rounding. Python's // rounds down (-35.75
+    would become -35.8), so the value is divided without its sign and the sign is put back.
+    """
+    tenths = abs(10 * value) // size  # e.g. 362 for 36.25
+    sign = "-" if value < 0 and tenths > 0 else ""
+    whole, tenth = divmod(tenths, 10)
+    return f"{sign}{whole:,}" + (f".{tenth}" if tenth else "")
+
+
+def position_text(position):
+    if position > 0:
+        return f"LONG {position:,}"
+    if position < 0:
+        return f"SHORT {-position:,}"
+    return "FLAT"
 
 
 def state_for(exchange, trader_id):

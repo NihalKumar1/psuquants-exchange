@@ -174,7 +174,7 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
   font-size: 13px;
 }
 
-/* The trader page's banner for errors and notices. It floats over the page just under the top
+/* The trader page's banner for errors, notices and fill alerts. It floats over the page just under the top
    bar, so the book never moves when it comes and goes. The anchor is sticky, so the banner
    stays in view (at the top of the window) when the page is scrolled down. */
 .banner-anchor { position: sticky; top: 0; height: 0; z-index: 10; }
@@ -199,6 +199,27 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
   20%, 60% { transform: translateX(-8px); }
   40%, 80% { transform: translateX(8px); }
 }
+/* Fill alerts (errors and sells keep the red above): green for a buy, blue when the market
+   maker's buys and sells cancel out. Black text, because white on this green is hard to read. */
+#banner.buy { background: var(--bid); color: #000; }
+#banner.even { background: var(--accent); }
+
+/* When I get filled, the market's column and its Position tile flash the fill's colour, then
+   fade back to normal over 2 s (FILL_SECONDS in trader.js). Each animation has only a "from"
+   step, so it ends on the element's usual look. */
+.column.flash-buy { animation: column-flash-buy 2s ease-out; }
+.column.flash-sell { animation: column-flash-sell 2s ease-out; }
+.column.flash-even { animation: column-flash-even 2s ease-out; }
+@keyframes column-flash-buy { from { box-shadow: 0 0 0 2px var(--bid), 0 0 28px rgba(34, 197, 94, 0.45); } }
+@keyframes column-flash-sell { from { box-shadow: 0 0 0 2px var(--ask), 0 0 28px rgba(239, 68, 68, 0.45); } }
+@keyframes column-flash-even { from { box-shadow: 0 0 0 2px var(--accent), 0 0 28px rgba(74, 127, 214, 0.45); } }
+.tile.flash-buy { animation: tile-flash-buy 2s ease-out; }
+.tile.flash-sell { animation: tile-flash-sell 2s ease-out; }
+.tile.flash-even { animation: tile-flash-even 2s ease-out; }
+@keyframes tile-flash-buy { from { background: rgba(34, 197, 94, 0.45); } }
+@keyframes tile-flash-sell { from { background: rgba(239, 68, 68, 0.45); } }
+@keyframes tile-flash-even { from { background: rgba(74, 127, 214, 0.45); } }
+
 /* An empty box, or the form whose command was rejected, while its error is showing. */
 .wrong { outline: 2px solid var(--ask); outline-offset: 2px; border-radius: 7px; }
 
@@ -212,7 +233,8 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
   padding: 14px 20px 20px;
   align-items: start;
 }
-.column { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+/* (The rounded corners are only seen when a fill flashes a ring around the column.) */
+.column { display: flex; flex-direction: column; gap: 14px; min-width: 0; border-radius: var(--radius); }
 
 /* One column per running market, all in one row: more markets means narrower columns. */
 #markets {
