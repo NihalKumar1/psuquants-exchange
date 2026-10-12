@@ -198,6 +198,25 @@ def test_a_click_take_trades_and_everyone_gets_the_new_trade(client, room):
     assert alice_update["me"]["cars"]["position"] == -4
 
 
+def test_each_side_of_a_fill_is_told_about_their_own_fill(client):
+    with client.websocket_connect("/ws") as alice, client.websocket_connect("/ws") as bob:
+        join(alice, "Alice")
+        join(bob, "Bob")
+        alice.receive_json()  # Bob joined
+        limit(alice, "sell", 40, 10)
+        alice.receive_json()
+        bob.receive_json()
+
+        bob.send_json({"type": "take", "market_id": "cars", "side": "buy", "price": 40, "size": 4})
+        alice_update = alice.receive_json()
+        bob_update = bob.receive_json()
+
+    assert [(fill["text"], fill["colour"]) for fill in alice_update["my_fills"]] == [
+        ("You sold 4 of Test market cars at 40, now SHORT 4", "sell")]
+    assert [(fill["text"], fill["colour"]) for fill in bob_update["my_fills"]] == [
+        ("You bought 4 of Test market cars at 40, now LONG 4", "buy")]
+
+
 def test_the_snapshot_has_the_whole_tape(client):
     with client.websocket_connect("/ws") as alice:
         join(alice, "Alice")

@@ -137,6 +137,142 @@ def test_trader_messages_carry_my_current_name(ex):
     assert update_message(ex, alice, [])["name"] == "Alicia"
 
 
+# --- Fill alerts ----------------------------------------------------------------------------
+# Each update tells a trader about their own fills in that command, ready to show (Q110–Q118).
+
+
+def test_both_sides_of_a_fill_are_told_and_bystanders_are_not(ex):
+    alice, bob, carol = join_all(ex, "Alice", "Bob", "Carol")
+    ex.place_limit("cars", alice, SELL, 40, 10)
+    events = ex.take("cars", bob, BUY, 40, 4)
+
+    assert update_message(ex, alice, events)["my_fills"] == [{
+        "market_id": "cars",
+        "text": "You sold 4 of Test market cars at 40, now SHORT 4",
+        "colour": "sell",
+    }]
+    assert update_message(ex, bob, events)["my_fills"] == [{
+        "market_id": "cars",
+        "text": "You bought 4 of Test market cars at 40, now LONG 4",
+        "colour": "buy",
+    }]
+    assert update_message(ex, carol, events)["my_fills"] == []
+
+
+def fill_text(ex, trader_id, events):
+    (fill,) = update_message(ex, trader_id, events)["my_fills"]
+    return fill["text"]
+
+
+def test_fills_at_several_prices_show_the_average(ex):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", alice, SELL, 36, 20)
+    ex.place_limit("cars", alice, SELL, 37, 5)
+    events = ex.place_limit("cars", bob, BUY, 37, 25)
+
+    assert fill_text(ex, bob, events) == "You bought 25 of Test market cars at avg 36.2, now LONG 25"
+    assert fill_text(ex, alice, events) == "You sold 25 of Test market cars at avg 36.2, now SHORT 25"
+
+
+def test_the_average_is_cut_down_to_one_decimal_not_rounded(ex):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", alice, SELL, 36, 3)
+    ex.place_limit("cars", alice, SELL, 37, 1)
+    events = ex.place_limit("cars", bob, BUY, 37, 4)  # (3 × 36 + 37) / 4 = 36.25
+
+    assert fill_text(ex, bob, events) == "You bought 4 of Test market cars at avg 36.2, now LONG 4"
+
+
+def test_a_negative_average_is_cut_towards_zero(ex):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", alice, SELL, -36, 3)
+    ex.place_limit("cars", alice, SELL, -35, 1)
+    events = ex.place_limit("cars", bob, BUY, -35, 4)  # (3 × −36 − 35) / 4 = −35.75
+
+    assert fill_text(ex, bob, events) == "You bought 4 of Test market cars at avg -35.7, now LONG 4"
+
+
+def test_avg_is_only_written_when_the_prices_differ(ex):
+    alice, bob, carol = join_all(ex, "Alice", "Bob", "Carol")
+    ex.place_limit("cars", alice, SELL, 40, 3)
+    ex.place_limit("cars", carol, SELL, 40, 2)
+    events = ex.take("cars", bob, BUY, 40, 5)  # two fills, one price
+
+    assert fill_text(ex, bob, events) == "You bought 5 of Test market cars at 40, now LONG 5"
+
+    ex.place_limit("cars", alice, BUY, 35, 1)
+    ex.place_limit("cars", alice, BUY, 37, 1)
+    events = ex.place_limit("cars", bob, SELL, 35, 2)  # different prices, whole average
+
+    assert fill_text(ex, bob, events) == "You sold 2 of Test market cars at avg 36, now LONG 3"
+
+
+def test_big_numbers_have_thousands_separators(ex):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", alice, SELL, 12345, 1000)
+    events = ex.take("cars", bob, BUY, 12345, 1000)
+
+    assert fill_text(ex, bob, events) == "You bought 1,000 of Test market cars at 12,345, now LONG 1,000"
+
+
+def test_a_fill_that_closes_the_position_says_flat(ex):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", alice, SELL, 40, 4)
+    ex.take("cars", bob, BUY, 40, 4)
+    ex.place_limit("cars", alice, BUY, 41, 4)
+    events = ex.take("cars", bob, SELL, 41, 4)
+
+    assert update_message(ex, bob, events)["my_fills"] == [{
+        "market_id": "cars",
+        "text": "You sold 4 of Test market cars at 41, now FLAT",
+        "colour": "sell",
+    }]
+
+
+def test_forced_trades_are_reported_and_the_mm_gets_both_sides_in_one_line(clock):
+    ex = tot_exchange(clock)
+    mm, bob, carol, dave = join_all(ex, "Mm", "Bob", "Carol", "Dave")
+    run_to_forced_trade(ex, mm, bid=100, ask=110)
+    ex.choose_side("cars", bob, BUY)
+    ex.choose_side("cars", carol, SELL)
+    ex.choose_side("cars", dave, SELL)
+    events = ex.end_forced_trade("cars", ended_by="timer")
+
+    assert update_message(ex, bob, events)["my_fills"] == [{
+        "market_id": "cars",
+        "text": "You bought 10 of Test market cars at 110, now LONG 10",
+        "colour": "buy",
+    }]
+    assert update_message(ex, mm, events)["my_fills"] == [{
+        "market_id": "cars",
+        "text": "You bought 20 of Test market cars at 100 and sold 10 at 110, now LONG 10",
+        "colour": "buy",
+    }]
+
+
+def test_the_mm_gets_the_neutral_colour_when_buys_and_sells_cancel_out(clock):
+    ex = tot_exchange(clock)
+    mm, bob, carol = join_all(ex, "Mm", "Bob", "Carol")
+    run_to_forced_trade(ex, mm, bid=100, ask=110)
+    ex.choose_side("cars", bob, BUY)
+    ex.choose_side("cars", carol, SELL)
+    events = ex.end_forced_trade("cars", ended_by="timer")
+
+    assert update_message(ex, mm, events)["my_fills"] == [{
+        "market_id": "cars",
+        "text": "You bought 10 of Test market cars at 100 and sold 10 at 110, now FLAT",
+        "colour": "even",
+    }]
+
+
+def test_reconnecting_does_not_replay_fill_alerts(ex):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", alice, SELL, 40, 10)
+    ex.take("cars", bob, BUY, 40, 4)
+
+    assert "my_fills" not in snapshot_message(ex, bob)
+
+
 # --- Admin ----------------------------------------------------------------------------------
 
 

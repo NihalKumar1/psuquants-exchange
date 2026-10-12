@@ -9,6 +9,7 @@
 const TOKEN_KEY = "psuq-token";            // lets this browser rejoin as the same trader
 const CLICK_SIZE_KEY = "psuq-click-size";  // one click size for every market
 const ERROR_SECONDS = 3;                   // how long an error stays on screen
+const FILL_SECONDS = 2;                    // how long a fill alert stays (keep style.css's flash in step)
 
 let socket = null;
 let me = null;          // {trader_id, name, token} once the server welcomes us
@@ -18,8 +19,8 @@ let tape = [];          // every trade in every market, oldest first
 let freshTradeIds = new Set();  // trades from the latest update, briefly highlighted
 const columns = {};     // market_id -> that market's column on the page
 let notice = "";        // a message that stays until things change, e.g. "Connection lost"
-let errorTimer = null;  // takes the current error down when its time is up
-let outlined = [];      // boxes and forms outlined in red along with the current error
+let messageTimer = null;  // takes the current error or fill alert down when its time is up
+let outlined = [];        // boxes and forms outlined in red along with the current error
 
 // --- Connection ---------------------------------------------------------------------------
 
@@ -64,6 +65,8 @@ function handle(message) {
     freshTradeIds = new Set(message.new_trades.map((trade) => trade.trade_id));
     tape.push(...message.new_trades);
     render();
+    // My own fills: "You bought 5 of Cars at 36, now LONG 5", and the market flashes.
+    message.my_fills.forEach(showFill);
   } else if (message.type === "reset") {
     // Comes right after a new welcome and an empty snapshot, which already redrew the screen.
     showError("The instructor started a new game.");
@@ -386,48 +389,77 @@ function renderTape() {
 
 // --- Small helpers ------------------------------------------------------------------------
 
-// Messages go in the red banner under the top bar. There are two kinds:
-//  - an error ("rejected: …", "Enter a price."): shows for ERROR_SECONDS, then goes away;
-//  - a notice ("Connection lost. Reconnecting…"): stays until setNotice("") clears it.
-// An error shows on top of a notice; when the error's time is up, the notice comes back.
+// Messages go in the banner under the top bar. There are three kinds:
+//  - an error ("rejected: …", "Enter a price."): red, shows for ERROR_SECONDS, then goes away;
+//  - a fill alert ("You bought 5 of Cars at 36, now LONG 5"): green for a buy, red for a sell,
+//    blue when buys and sells cancel out; shows for FILL_SECONDS;
+//  - a notice ("Connection lost. Reconnecting…"): red, stays until setNotice("") clears it.
+// The newest error or fill alert replaces whichever is showing. Either one shows on top of a
+// notice; when its time is up, the notice comes back.
 
 function showError(text, outline = []) {
-  // Show an error, and outline these boxes or forms in red until it goes away. A new error
-  // replaces the one showing and starts the time again.
-  clearTimeout(errorTimer);
+  // Show an error, and outline these boxes or forms in red until it goes away.
+  showMessage(text, "error", ERROR_SECONDS, outline);
+}
+
+function showFill(fill) {
+  // A fill alert in the banner, and the market's column and Position tile flash its colour.
+  showMessage(fill.text, fill.colour, FILL_SECONDS);
+  const column = columns[fill.market_id];
+  if (column) {
+    flash(column, fill.colour);
+    flash(part(column, "my-position").closest(".tile"), fill.colour);
+  }
+}
+
+function showMessage(text, colour, seconds, outline = []) {
+  // Replaces the error or fill alert showing (and its outlines) and starts the time again.
+  clearTimeout(messageTimer);
   removeOutlines();
   outlined = outline.filter((element) => element);  // skip "no form" (null)
   outlined.forEach((element) => element.classList.add("wrong"));
-  showBanner(text);
-  errorTimer = setTimeout(endError, ERROR_SECONDS * 1000);
+  showBanner(text, colour);
+  messageTimer = setTimeout(endMessage, seconds * 1000);
 }
 
-function endError() {
-  errorTimer = null;
+function endMessage() {
+  messageTimer = null;
   removeOutlines();
-  if (notice) showBanner(notice); else hideBanner();
+  if (notice) showBanner(notice, "error"); else hideBanner();
 }
 
 function setNotice(text) {
-  // A notice replaces any error showing right away: it matters more (e.g. connection lost).
+  // A notice replaces any message showing right away: it matters more (e.g. connection lost).
   if (text === notice) return;  // e.g. a reconnect that failed again: don't shake again
   notice = text;
   if (notice) {
-    clearTimeout(errorTimer);
-    endError();
-  } else if (errorTimer === null) {
+    clearTimeout(messageTimer);
+    endMessage();
+  } else if (messageTimer === null) {
     hideBanner();
   }
 }
 
-function showBanner(text) {
+function showBanner(text, colour) {
+  // colour is "error", "buy", "sell" or "even" (see #banner in style.css).
   const banner = document.getElementById("banner");
   banner.textContent = text;
   banner.hidden = false;
-  // Shake it, even if it was already showing this same message.
-  banner.classList.remove("shake");
-  void banner.offsetWidth;  // makes the browser notice the class came off before it goes back on
-  banner.classList.add("shake");
+  banner.className = colour;
+  restartAnimation(banner, "shake");  // shake it, even if it was already showing this message
+}
+
+function flash(element, colour) {
+  // Fade the element from the fill's colour back to normal (style.css: .flash-buy, ...).
+  element.classList.remove("flash-buy", "flash-sell", "flash-even");
+  restartAnimation(element, `flash-${colour}`);
+}
+
+function restartAnimation(element, className) {
+  // Play a CSS animation from the start, even if it is already playing.
+  element.classList.remove(className);
+  void element.offsetWidth;  // makes the browser notice the class came off before it goes back on
+  element.classList.add(className);
 }
 
 function hideBanner() {

@@ -244,6 +244,19 @@ Errors used to stay on screen until the next reconnect, and were easy to miss.
 108. Exports use **names everywhere** (current names, Q29). In events.json, names **replace** the ids in place (`"buyer_id": "Alice"`).
 109. The Reset dialog **warns** when the game hasn't been exported since the last change (people only joining doesn't count as a change).
 
+### Answered while adding fill alerts to the trader page (2026-10-12)
+When one of a trader's orders fills, their page flashes and says what happened.
+110. **What flashes**: that market's **column** and its **Position tile**, **green for a buy, red for a sell**. It happens for every fill: a resting order being filled, a take, a limit order that crosses, and **forced trades** too.
+111. **The message** goes in the **top banner** (the one errors use, Q88–Q89), coloured **green for a buy, red for a sell** (the book's bid and offer colours): "You bought 5 of Cars at 36, now LONG 5" (or "now SHORT 5", or "now FLAT"). The position is the trader's position in that market after the fill. The market's **full title** is used, even if the banner wraps.
+112. The flash and the message last **2 seconds**. The message **shakes** like an error.
+113. Fills and errors share the banner: **the newest message wins** and keeps its own time (2 s for a fill, 3 s for an error). A notice ("Connection lost…") comes back once both are gone.
+114. One action that fills several times (several prices or several counterparties) gives **one message** with the **total size and the average price**, shown with **up to 1 decimal** ("at avg 36.2").
+115. When the market maker both buys and sells in the same moment (the forced trade), it is **one line with both sides**: "You bought 30 of Cars at avg 36 and sold 45 at avg 38, now SHORT 15". The flash is green or red by the **net change** (net bought = green, net sold = red).
+116. The average is **cut down to 1 decimal** (truncated, not rounded): 36.25 → 36.2, 36.29 → 36.2.
+   - A negative average is cut **towards zero**: −36.25 → −36.2.
+117. When the MM's buys and sells cancel out (bought 30 and sold 30), the flash and message use the page's **neutral accent colour**.
+118. "avg" is written **only when the fills were at different prices**: "You bought 25 of Cars at 36", but "You bought 25 of Cars at avg 36.2".
+
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.
 2. FastAPI server, WebSockets, join with name + room code, and a minimal trader UI for one market in continuous trading.
