@@ -50,25 +50,30 @@
       <div id="markets"></div>
     </div>
 
-    <!-- Right: my resting orders, everyone's positions and the trade tape, for every market. -->
-    <aside class="column">
-      <section class="panel">
+    <!-- Right: my resting orders, everyone's positions and the trade tape, for every market.
+         Each list scrolls inside its own box; the page itself never scrolls. -->
+    <aside class="column sidebar">
+      <section class="panel orders-panel">
         <h2>Resting orders</h2>
-        <table id="my-orders">
-          <thead><tr><th>Market</th><th>Side</th><th class="num">Price</th><th class="num">Size</th><th></th></tr></thead>
-          <tbody></tbody>
-        </table>
+        <div class="scroll">
+          <table id="my-orders">
+            <thead><tr><th>Market</th><th>Side</th><th class="num">Price</th><th class="num">Size</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </section>
 
-      <section class="panel">
+      <section class="panel grow">
         <h2>Positions</h2>
-        <table id="positions">
-          <thead></thead>
-          <tbody></tbody>
-        </table>
+        <div class="scroll">
+          <table id="positions">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </section>
 
-      <section class="panel">
+      <section class="panel grow">
         <h2>Trades</h2>
         <div class="scroll">
           <table id="tape">
@@ -82,90 +87,94 @@
 </section>
 
 <!-- One market's column. trader.js makes a copy for each running market, so everything inside
-     is found by class, not id. -->
+     is found by class, not id. A one-line title bar, then the book and the controls: side by
+     side when the column is wide (one market), book on top when it is narrow (several). -->
 <template id="market-column">
   <div class="market column">
-    <!-- The order book comes first, so it sits at the same height in every column. -->
-    <section class="panel book-panel">
-      <div class="market-head">
-        <span class="status pill"></span>
-        <h1 class="title"></h1>
+    <div class="market-head">
+      <span class="status pill"></span>
+      <h1 class="title"></h1>
+      <span class="market-info muted"></span>
+    </div>
+
+    <div class="market-body">
+      <section class="panel book-panel">
+        <table class="book">
+          <thead>
+            <tr><th>Bidders</th><th class="num">Size</th><th class="price">Price</th><th class="num">Size</th><th class="right">Offerers</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </section>
+
+      <div class="controls">
+        <!-- Trade or Tighten: shown instead of order entry while the market is opening. -->
+        <section class="tot-panel panel" hidden>
+          <h2>Trade or Tighten</h2>
+
+          <!-- 1. Width auction -->
+          <div class="tot-auction">
+            <p class="tot-line">Best width <b class="tot-best-width"></b> <span class="tot-best-holder muted"></span></p>
+            <form class="width-form entry single">
+              <input class="width-input" type="number" min="0" placeholder="Your width">
+              <button type="submit" class="primary">Submit width</button>
+            </form>
+            <p class="hint">The narrowest width makes the market. Width is in price units and must beat the best.</p>
+          </div>
+
+          <!-- 2 and 3. The market maker and their quote -->
+          <p class="tot-mm-line tot-line"></p>
+          <form class="mm-quote-form entry pair">
+            <input class="mm-bid" type="number" placeholder="Bid">
+            <input class="mm-ask" type="number" placeholder="Offer">
+            <button type="submit" class="primary">Submit quote (final)</button>
+          </form>
+
+          <!-- 3. The forced trade -->
+          <div class="tot-forced">
+            <p class="tot-line">Time left <b data-countdown=""></b>  ·  Size <b class="tot-size"></b></p>
+            <div class="forced-buttons">
+              <button type="button" class="choose-buy buy">Buy at <span class="forced-ask"></span></button>
+              <button type="button" class="choose-sell sell">Sell at <span class="forced-bid"></span></button>
+            </div>
+            <p class="forced-note hint"></p>
+          </div>
+        </section>
+
+        <!-- Order entry: a bid, an offer, or a two-sided quote (bid, offer, size). -->
+        <section class="entry-panel panel">
+          <form class="buy-form entry">
+            <input class="buy-price" type="number" placeholder="Bid price">
+            <input class="buy-size" type="number" min="1" step="1" placeholder="Size">
+            <button type="submit" class="buy">Bid</button>
+          </form>
+          <form class="sell-form entry">
+            <input class="sell-price" type="number" placeholder="Offer price">
+            <input class="sell-size" type="number" min="1" step="1" placeholder="Size">
+            <button type="submit" class="sell">Offer</button>
+          </form>
+          <form class="quote-form entry quote">
+            <input class="quote-bid" type="number" placeholder="Bid">
+            <input class="quote-ask" type="number" placeholder="Offer">
+            <input class="quote-size" type="number" min="1" step="1" placeholder="Size">
+            <button type="submit" class="primary">Quote</button>
+          </form>
+        </section>
+
+        <!-- My numbers in this market. -->
+        <section class="numbers-panel panel">
+          <div class="tiles">
+            <div class="tile"><small>Position</small><b class="my-position"></b></div>
+            <div class="tile"><small>Realized</small><b class="my-realized"></b></div>
+            <div class="tile"><small>MTM</small><b class="my-unrealized"></b></div>
+            <div class="tile"><small>Total</small><b class="my-total"></b></div>
+          </div>
+          <div class="cancel-all">
+            <button type="button" class="cancel-all-market ghost">Cancel all (this market)</button>
+          </div>
+        </section>
       </div>
-      <p class="market-info muted"></p>
-      <table class="book">
-        <thead>
-          <tr><th>Bidders</th><th class="num">Size</th><th class="price">Price</th><th class="num">Size</th><th class="right">Offerers</th></tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </section>
-
-    <!-- Trade or Tighten: shown instead of order entry while the market is opening. -->
-    <section class="tot-panel panel" hidden>
-      <h2>Trade or Tighten</h2>
-
-      <!-- 1. Width auction -->
-      <div class="tot-auction">
-        <p class="tot-line">Best width <b class="tot-best-width"></b> <span class="tot-best-holder muted"></span></p>
-        <form class="width-form entry single">
-          <input class="width-input" type="number" min="0" placeholder="Your width">
-          <button type="submit" class="primary">Submit width</button>
-        </form>
-        <p class="hint">The narrowest width makes the market. Width is in price units and must beat the best.</p>
-      </div>
-
-      <!-- 2 and 3. The market maker and their quote -->
-      <p class="tot-mm-line tot-line"></p>
-      <form class="mm-quote-form entry quote">
-        <input class="mm-bid" type="number" placeholder="Bid">
-        <input class="mm-ask" type="number" placeholder="Offer">
-        <button type="submit" class="primary">Submit quote (final)</button>
-      </form>
-
-      <!-- 3. The forced trade -->
-      <div class="tot-forced">
-        <p class="tot-line">Time left <b data-countdown=""></b>  ·  Size <b class="tot-size"></b></p>
-        <div class="forced-buttons">
-          <button type="button" class="choose-buy buy">Buy at <span class="forced-ask"></span></button>
-          <button type="button" class="choose-sell sell">Sell at <span class="forced-bid"></span></button>
-        </div>
-        <p class="forced-note hint"></p>
-      </div>
-    </section>
-
-    <section class="entry-panel panel">
-      <h2>Order entry</h2>
-      <form class="buy-form entry">
-        <input class="buy-price" type="number" placeholder="Bid price">
-        <input class="buy-size" type="number" min="1" step="1" placeholder="Size">
-        <button type="submit" class="buy">Bid</button>
-      </form>
-      <form class="sell-form entry">
-        <input class="sell-price" type="number" placeholder="Offer price">
-        <input class="sell-size" type="number" min="1" step="1" placeholder="Size">
-        <button type="submit" class="sell">Offer</button>
-      </form>
-      <h3>Two-sided quote</h3>
-      <form class="quote-form entry quote">
-        <input class="quote-bid" type="number" placeholder="Bid">
-        <input class="quote-ask" type="number" placeholder="Offer">
-        <input class="quote-size" type="number" min="1" step="1" placeholder="Size">
-        <button type="submit" class="primary">Quote</button>
-      </form>
-    </section>
-
-    <section class="panel">
-      <h2>My numbers</h2>
-      <div class="tiles">
-        <div class="tile"><small>Position</small><b class="my-position"></b></div>
-        <div class="tile"><small>Realized</small><b class="my-realized"></b></div>
-        <div class="tile"><small>MTM</small><b class="my-unrealized"></b></div>
-        <div class="tile"><small>Total</small><b class="my-total"></b></div>
-      </div>
-      <div class="cancel-all">
-        <button type="button" class="cancel-all-market ghost">Cancel all (this market)</button>
-      </div>
-    </section>
+    </div>
   </div>
 </template>
 

@@ -65,7 +65,7 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   on every command instead of remembering an id).
 - `exchange/server/views.py`: engine state → JSON for browsers (public, private, and admin views).
   It also decides the trader page's layout: one column per running market (`columns`), the
-  markets in the positions table (`table_markets`), and the book depth (10, or 5 with several).
+  markets in the positions table (`table_markets`), and the book depth (10 with one market, 5 with two, 4 with more).
   Each update also carries `my_fills`: the trader's own fill alerts, with the text already
   written ("You bought 5 of Cars at 36, now LONG 5") and a colour (buy/sell/even). The page
   shows it in the banner and flashes the market's column and Position tile (SPEC Q110–Q118).

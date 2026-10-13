@@ -225,17 +225,35 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
 
 /* --- Terminal layout ----------------------------------------------------------------------- */
 
-/* The market columns on the left, the sidebar (positions, tape) on the right. */
+/* The trading screen is exactly one window high and never scrolls: the top bar, then the
+   market columns on the left and the sidebar (resting orders, positions, tape) on the right.
+   The only things that scroll are the sidebar's lists, each inside its own box. On a window
+   shorter than 600px the page scrolls instead of squashing the book further. (Narrow windows:
+   see "Fallbacks" at the end of this part.) Nothing here hides overflow, so the ring that
+   flashes around a column when I get filled is never cut off. */
+#trade-screen {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 600px;
+  display: flex;
+  flex-direction: column;
+}
+#trade-screen .topbar { padding: 8px 16px; gap: 20px; }
+#trade-screen .me { gap: 20px; }
+
 .terminal {
+  flex: 1;
+  min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(290px, 420px);
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
+  grid-template-rows: minmax(0, 1fr);  /* both sides exactly fill the window's height */
   gap: 14px;
-  padding: 14px 20px 20px;
-  align-items: start;
+  padding: 12px 16px 16px;
 }
 /* (The rounded corners are only seen when a fill flashes a ring around the column.) */
 .column { display: flex; flex-direction: column; gap: 14px; min-width: 0; border-radius: var(--radius); }
 
+.market-area { display: flex; flex-direction: column; min-height: 0; }
 /* One column per running market, all in one row: more markets means narrower columns. */
 #markets {
   display: grid;
@@ -244,26 +262,54 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
   gap: 14px;
   align-items: start;
 }
-/* Each column is a size container, so its book can tighten up when the column is narrow
-   (see the @container rule under "Order book"). */
-.market { container-type: inline-size; }
+.market-area #markets {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr);
+  align-items: stretch;  /* every column is the full height */
+}
 .waiting { margin: 0; color: var(--muted); text-align: center; padding: 28px 16px; }
 
-/* A market's title bar, at the top of its book panel. */
-.market-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.market-head h1 {
-  font-size: 16px;
+/* One market's column: a one-line title bar, then the book and the controls. The column is a
+   size container named "market": when it is wide (one market on screen) the controls sit to
+   the right of the book; when it is narrow (several markets) they sit under it. */
+.market { container: market / inline-size; gap: 10px; min-height: 0; }
+.market-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; padding: 0 2px; }
+.market-head h1, .market-info {
   min-width: 0;
   white-space: nowrap;      /* one line, so every column's book starts at the same height */
   overflow: hidden;
-  text-overflow: ellipsis;  /* a long title ends in "…"; hovering shows all of it */
+  text-overflow: ellipsis;  /* long text ends in "…"; hovering shows all of it */
 }
-.market-info {
-  margin: 4px 0 12px;
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.market-head h1 { font-size: 16px; flex: 0 1 auto; }
+.market-head .pill { flex-shrink: 0; white-space: nowrap; }
+.market-info { margin-left: auto; font-size: 12px; flex: 0 3 auto; }  /* gives way before the title */
+
+.market-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  /* The book takes whatever the controls leave, but never less than its minimum height (see
+     "Order book"); below that the page scrolls rather than cutting the book off. */
+  grid-template-rows: minmax(auto, 1fr) auto;
+  gap: 10px;
+}
+@container market (min-width: 760px) {
+  .market-body {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-rows: minmax(auto, 1fr);
+  }
+}
+/* The controls sit straight on the page (no panel box, to save height): order entry (or Trade
+   or Tighten), then my numbers under a line. */
+#trade-screen .controls { display: flex; flex-direction: column; gap: 10px; }
+#trade-screen .controls > .panel { background: none; border: none; border-radius: 0; padding: 0; }
+#trade-screen .controls > .numbers-panel { border-top: 1px solid var(--line); padding-top: 10px; }
+/* Under the book there is no room for the "Trade or Tighten" heading; the status pill in the
+   title bar already says which step the market is at. */
+@container market (max-width: 759px) {
+  .tot-panel h2 { display: none; }
 }
 
 .panel {
@@ -281,11 +327,22 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
   margin-bottom: 12px;
 }
 .panel h3 { font-size: 12px; color: var(--muted); font-weight: 500; margin: 14px 0 8px; }
+/* Tighter panels on the trading screen, so everything fits. */
+#trade-screen .panel { padding: 10px 12px; }
+#trade-screen .panel h2 { margin-bottom: 8px; }
 
-/* Narrow screens: markets one under another (full width), then the sidebar. */
-@media (max-width: 1100px) {
-  .terminal { grid-template-columns: 1fr; }
-  #markets { grid-auto-flow: row; }
+/* The sidebar: Resting orders is only as tall as its orders (up to 30% of the height),
+   Positions and Trades share the rest. Each list scrolls inside its box, under its heading. */
+.sidebar { gap: 12px; min-height: 0; }
+.sidebar .panel { display: flex; flex-direction: column; min-height: 0; }
+.sidebar .orders-panel { flex: 0 1 auto; max-height: 30%; }
+.sidebar .grow { flex: 1 1 0; }
+.sidebar .scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  scrollbar-width: thin;                         /* dark scrollbars, to match the page */
+  scrollbar-color: var(--line) transparent;
 }
 
 /* --- Order entry --------------------------------------------------------------------------- */
@@ -299,14 +356,39 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
 .entry.quote { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 76px; }
 .entry.quote button { grid-column: 1 / -1; }
 .entry.single { grid-template-columns: minmax(0, 1fr) auto; }
+/* The market maker's quote: bid, offer, then the button on its own line. */
+.entry.pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.entry.pair button { grid-column: 1 / -1; }
+
+/* In a market's column: smaller boxes, and the two-sided quote on one line (bid, offer, size,
+   button) unless the column is very narrow or the controls are in their own side column. */
+.market input { padding: 6px 8px; }
+.market button { padding: 7px 10px; white-space: nowrap; }
+.market .entry { gap: 6px; margin-bottom: 6px; }
+.market .entry:last-child { margin-bottom: 0; }
+.market .entry.quote { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 60px 76px; }
+.market .entry.quote button { grid-column: auto; }
+@container market (max-width: 280px) {
+  .market .entry { grid-template-columns: minmax(0, 1fr) 52px 60px; }
+  .market .entry.quote { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 52px; }
+  .market .entry.quote button { grid-column: 1 / -1; }
+}
+@container market (min-width: 760px) {
+  .market .entry.quote { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 76px; }
+  .market .entry.quote button { grid-column: 1 / -1; }
+}
+/* The width form and the market maker's quote keep their own shapes (the rules above are for
+   the Bid and Offer forms). */
+.market .entry.single { grid-template-columns: minmax(0, 1fr) auto; }
+.market .entry.pair { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 
 /* --- Trade or Tighten ---------------------------------------------------------------------- */
 
-.tot-line { margin: 0 0 10px; }
+.tot-line { margin: 0 0 8px; }
 .tot-line b { font-family: var(--mono); }
 .hint { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
 .forced-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.forced-buttons button { padding: 12px 8px; font-size: 14px; }
+.market .forced-buttons button { padding: 10px 8px; font-size: 14px; }
 .forced-buttons button span { font-family: var(--mono); }
 /* Once a side is chosen, the other one fades (it can still be clicked to switch). */
 .forced-buttons.decided button:not(.chosen) { opacity: 0.35; }
@@ -315,16 +397,28 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
 
 /* --- My numbers ---------------------------------------------------------------------------- */
 
-.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* Four tiles in one row under the book; 2 x 2 in a very narrow column, or when the controls
+   have their own side column. */
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+@container market (max-width: 360px) {
+  .tiles { grid-template-columns: 1fr 1fr; }
+}
+@container market (min-width: 760px) {
+  .tiles { grid-template-columns: 1fr 1fr; }
+}
 .tile {
   background: var(--panel-raised);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 5px 10px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
+  line-height: 1.2;
 }
-.tile b { font: 600 18px var(--mono); }
+.tile b { font: 600 16px/1.2 var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The average price next to my position: smaller and grey, so the position still stands out. */
+.tile .average { font-size: 12px; font-weight: 500; color: var(--muted); }
 
 /* --- Tables -------------------------------------------------------------------------------- */
 
@@ -349,18 +443,21 @@ tbody tr:last-child td { border-bottom: none; }
 .right { text-align: right; }
 .price { text-align: center; }
 .empty td { color: var(--muted); text-align: center; padding: 18px; }
+/* Shorter rows in the sidebar's lists. */
+.sidebar td { padding: 4px 8px; line-height: 1.3; }
+.sidebar .empty td { padding: 10px; }
 
 /* My resting orders, in the sidebar. Long market titles end in "…" (full title on hover). */
 #my-orders { table-layout: fixed; }
 #my-orders th:nth-child(2) { width: 56px; }  /* side */
-#my-orders th:nth-child(3) { width: 72px; }  /* price */
+#my-orders th:nth-child(3) { width: 84px; }  /* price */
 #my-orders th:nth-child(4) { width: 52px; }  /* size */
 #my-orders th:nth-child(5) { width: 48px; }  /* cancel */
 #my-orders td:first-child { color: var(--muted); }
 #my-orders td:last-child { text-align: right; }
 
-.cancel-all { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
-.cancel-all button { font-size: 12px; padding: 7px 8px; }
+.cancel-all { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.cancel-all button { font-size: 12px; padding: 6px 8px; }
 
 /* Positions: one column per market. Long market titles end in "…" (full title on hover). */
 #positions { table-layout: fixed; }
@@ -370,9 +467,9 @@ tbody tr:last-child td { border-bottom: none; }
 #positions tr.mine td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
 .scroll { max-height: 420px; overflow-y: auto; }
-.scroll th { position: sticky; top: 0; background: var(--panel); }
+.scroll th { position: sticky; top: 0; z-index: 1; background: var(--panel); }
 #tape { table-layout: fixed; }
-#tape td { font-size: 13px; padding: 6px 6px; }
+#tape td { font-size: 13px; padding: 4px 6px; }
 #tape th:nth-child(1) { width: 70px; }  /* time */
 #tape th:nth-child(2) { width: 22%; }   /* market */
 #tape th:nth-child(5) { width: 72px; }  /* price */
@@ -384,17 +481,35 @@ tbody tr:last-child td { border-bottom: none; }
 
 /* --- Order book ---------------------------------------------------------------------------- */
 
+/* The book's panel is a size container named "book", so its rows can share its height. It is
+   never shorter than its rows at their smallest (20px each, --book-rows is set by renderBook). */
+.book-panel {
+  container: book / size;
+  min-height: calc(var(--book-rows, 22) * 20px + 10px);
+  overflow: hidden;
+}
+#trade-screen .book-panel { padding: 4px 8px; }
 .book { table-layout: fixed; }
 .book th:nth-child(2), .book th:nth-child(4) { width: 72px; }
 .book th:nth-child(3) { width: 104px; }
 /* Every row is exactly one line and the same height, so the book never changes shape and the
-   best bid and offer stay put (see renderBook in trader.js). Names that don't fit end in "…";
-   hovering the row shows them all. */
-.book tbody tr { height: 34px; }
+   best bid and offer stay put (see renderBook in trader.js). The height is the panel's height
+   shared equally by all the rows (--book-rows, set by renderBook: both sides, the divider and
+   the heading), but never under 20px or over 34px. Names that don't fit end in "…"; hovering
+   the row shows them all. */
+.book tr { height: clamp(20px, calc((100cqh - 4px) / var(--book-rows, 22)), 34px); }
+.book th {
+  padding: 0 10px;
+  line-height: 16px;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .book td {
   padding: 0 10px;
   font-size: 13px;
-  line-height: 20px;  /* well under the row height, so text never stretches a row */
+  line-height: 16px;  /* under the smallest row height, so text never stretches a row */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -435,17 +550,34 @@ tbody tr:last-child td { border-bottom: none; }
 }
 .book tr.spread b { color: var(--text); font-weight: 600; }
 
-/* A narrow market column (several markets side by side, or a phone): a tighter ladder so the
-   names still fit. */
-@container (max-width: 480px) {
+/* A narrow book (several markets side by side, or a phone): a tighter ladder so the names
+   still fit. */
+@container book (max-width: 480px) {
   .book th:nth-child(2), .book th:nth-child(4) { width: 36px; }
   .book th:nth-child(3) { width: 76px; }
-  .book td { padding: 0 5px; font-size: 12px; }
+  .book th, .book td { padding: 0 5px; }
+  .book td { font-size: 12px; }
   .book td.price { font-size: 12px; }
 }
 
+/* --- Fallbacks ----------------------------------------------------------------------------- */
+
+/* Narrow windows (Q84): markets one under another (full width), then the sidebar, and the
+   page scrolls like a normal web page. Rows go back to a fixed height and lists to a fixed
+   box height, because there is no window height to share out. */
+@media (max-width: 1100px) {
+  #trade-screen { height: auto; min-height: 0; }
+  .terminal { grid-template-columns: 1fr; grid-template-rows: none; }
+  .market-area #markets { grid-auto-flow: row; grid-template-rows: none; }
+  .market-body { grid-template-rows: auto; }
+  .book-panel { container-type: inline-size; }
+  .book tr { height: 30px; }
+  .sidebar .orders-panel { max-height: none; }
+  .sidebar .scroll { max-height: 420px; }
+}
+
 @media (max-width: 600px) {
-  .topbar, .terminal { padding-left: 16px; padding-right: 16px; }
+  .topbar, .terminal, #trade-screen .topbar { padding-left: 16px; padding-right: 16px; }
   #banner { left: 16px; right: 16px; }
 }
 

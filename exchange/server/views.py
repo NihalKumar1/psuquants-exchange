@@ -13,8 +13,9 @@ Four kinds of view:
 from exchange.engine import MarketStatus, Side, TradeExecuted
 from exchange.engine.review import total_edge, trader_fills
 
-BOOK_DEPTH = 10        # price levels shown on each side of the book...
-SHORT_BOOK_DEPTH = 5   # ...or this many when several markets share the trader's screen
+BOOK_DEPTH = 10         # price levels shown on each side of the book...
+SHORT_BOOK_DEPTH = 5    # ...or this many when two markets share the trader's screen...
+NARROW_BOOK_DEPTH = 4   # ...or this many when three or more do (so it all fits a laptop screen)
 TRADE_OR_TIGHTEN = (MarketStatus.AUCTION, MarketStatus.MM_QUOTING, MarketStatus.FORCED_TRADE)
 # Markets that get their own column on the trader page (not CREATED, not SETTLED).
 RUNNING = (*TRADE_OR_TIGHTEN, MarketStatus.OPEN, MarketStatus.HALTED)
@@ -43,8 +44,13 @@ def started_market_ids(exchange):
 
 
 def book_depth(exchange):
-    """The full book when one market has the screen to itself, a shorter one when several share it."""
-    return BOOK_DEPTH if len(running_market_ids(exchange)) <= 1 else SHORT_BOOK_DEPTH
+    """The full book when one market has the screen to itself, shorter ones when several share it."""
+    running = len(running_market_ids(exchange))
+    if running <= 1:
+        return BOOK_DEPTH
+    if running == 2:
+        return SHORT_BOOK_DEPTH
+    return NARROW_BOOK_DEPTH
 
 
 # --- Public ---------------------------------------------------------------------------------
@@ -141,9 +147,22 @@ def trader_view(exchange, market_id, trader_id):
             if order.trader_id == trader_id
         ],
         **position_view(market, trader_id),
+        "average_price": average_price_text(market.position(trader_id)),
         "is_mm": market.mm_id == trader_id,
         "my_choice": choice.value if choice else None,
     }
+
+
+def average_price_text(position):
+    """The average price of the open position, e.g. "36.2", or None when flat (Q124-Q126).
+
+    It is the average of the open lots, so a sale closes the oldest buys first (FIFO, Q9) and
+    the MTM tile is always (mark - average) x position. Cut to 1 decimal like the fill alerts.
+    """
+    if position.size == 0:
+        return None
+    value = sum(lot.price * abs(lot.size) for lot in position.lots)
+    return average_text(value, abs(position.size))
 
 
 def position_view(market, trader_id):
