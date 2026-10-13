@@ -137,10 +137,10 @@ function renderColumn(column, market, mine) {
   const status = part(column, "status");
   status.textContent = statusText(market.status);
   status.className = `status pill ${market.status}`;
-  const info = `Tick ${number(market.tick_size)}  ·  Max position ${number(market.max_position)}` +
-    "  ·  Click the best bid or offer to trade";
+  // On the title line, so it is kept short; hovering shows the hint too.
+  const info = `Tick ${number(market.tick_size)}  ·  Max position ${number(market.max_position)}`;
   part(column, "market-info").textContent = info;
-  part(column, "market-info").title = info;
+  part(column, "market-info").title = info + "  ·  Click the best bid or offer to trade";
   for (const name of ["buy-price", "sell-price", "quote-bid", "quote-ask", "width-input", "mm-bid", "mm-ask"]) {
     part(column, name).step = market.tick_size;
   }
@@ -200,7 +200,7 @@ function renderBook(column, market) {
   // bid slots, every row the same height (see style.css). So the best offer is always the row
   // just above the divider and the best bid the row just below it, and the row under the mouse
   // can't slide away between seeing it and clicking it. Empty slots are blank rows.
-  // (The depth is 10 with one market on screen and 5 with several; the server decides.)
+  // (The depth is 10 with one market on screen, 5 with two and 4 with more; the server decides.)
   // Slot 0 on each side is the best price; offers count upwards from the divider.
   const marketId = market.market_id;
   const biggest = Math.max(1, ...[...market.bids, ...market.asks].map(levelSize));
@@ -217,6 +217,8 @@ function renderBook(column, market) {
       : blankBookRow());
   }
   part(column, "book").tBodies[0].replaceChildren(...offerRows, spreadRow(market), ...bidRows);
+  // The rows share the book's height equally, counting the heading row too (style.css).
+  column.style.setProperty("--book-rows", 2 * state.book_depth + 2);
 }
 
 function blankBookRow() {
@@ -295,7 +297,18 @@ function ordersText(level) {
 }
 
 function renderMyNumbers(column, mine) {
-  part(column, "my-position").replaceChildren(signed(mine.position));
+  // My position, and next to it the average price I'm in at ("+10 @ 117,500"); just the
+  // position when I'm flat. The server writes the average (FIFO, cut to 1 decimal).
+  const position = part(column, "my-position");
+  position.replaceChildren(signed(mine.position));
+  if (mine.average_price !== null) {
+    const average = document.createElement("span");
+    average.className = "average";
+    average.textContent = ` @ ${mine.average_price}`;
+    position.append(average);
+  }
+  position.title = mine.average_price === null ? "" :
+    `Position ${number(mine.position)} at an average price of ${mine.average_price}`;
   part(column, "my-realized").replaceChildren(signed(mine.realized));
   part(column, "my-unrealized").replaceChildren(signed(mine.unrealized));
   part(column, "my-total").replaceChildren(signed(mine.total));

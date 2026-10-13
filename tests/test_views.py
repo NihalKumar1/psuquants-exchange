@@ -111,6 +111,42 @@ def test_trader_view_has_only_my_resting_orders_and_my_pnl(ex):
     assert view["total"] == 20
 
 
+def test_average_price_is_of_the_open_lots_first_in_first_out(ex):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", bob, SELL, 100, 10)
+    ex.take("cars", alice, BUY, 100, 10)  # alice long 10 @ 100
+    ex.place_limit("cars", bob, SELL, 110, 10)
+    ex.take("cars", alice, BUY, 110, 10)  # alice long 20: 10 @ 100, 10 @ 110
+    assert trader_view(ex, "cars", alice)["average_price"] == "105"
+
+    ex.place_limit("cars", bob, BUY, 120, 10)
+    ex.take("cars", alice, SELL, 120, 10)  # closes the oldest lot, the one bought at 100
+
+    assert trader_view(ex, "cars", alice)["average_price"] == "110"
+
+
+def test_average_price_of_a_short_is_cut_to_1_decimal(ex):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", alice, SELL, 36, 3)
+    ex.place_limit("cars", alice, SELL, 37, 1)
+    ex.take("cars", bob, BUY, 37, 4)  # alice short 4: (3 x 36 + 37) / 4 = 36.25
+
+    assert trader_view(ex, "cars", alice)["average_price"] == "36.2"
+    assert trader_view(ex, "cars", bob)["average_price"] == "36.2"
+
+
+def test_no_average_price_when_flat(ex):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    assert trader_view(ex, "cars", alice)["average_price"] is None
+
+    ex.place_limit("cars", bob, SELL, 40, 5)
+    ex.take("cars", alice, BUY, 40, 5)
+    ex.place_limit("cars", bob, BUY, 41, 5)
+    ex.take("cars", alice, SELL, 41, 5)  # back to flat
+
+    assert trader_view(ex, "cars", alice)["average_price"] is None
+
+
 def test_trade_view_uses_names(ex, clock):
     alice, bob = join_all(ex, "Alice", "Bob")
     ex.place_limit("cars", alice, SELL, 40, 10)
@@ -447,7 +483,7 @@ def test_one_running_market_shows_10_levels_each_side(ex):
     assert len(state["markets"]["cars"]["bids"]) == 10
 
 
-def test_several_running_markets_show_5_levels_each_side(ex):
+def test_two_running_markets_show_5_levels_each_side(ex):
     (alice,) = join_all(ex, "Alice")
     for price in range(1, 13):
         ex.place_limit("cars", alice, BUY, price, 1)
@@ -459,6 +495,30 @@ def test_several_running_markets_show_5_levels_each_side(ex):
     assert state["book_depth"] == 5
     assert [level["price"] for level in state["markets"]["cars"]["bids"]] == [12, 11, 10, 9, 8]
     assert [level["price"] for level in state["markets"]["cars"]["asks"]] == [101, 102, 103, 104, 105]
+
+
+def test_three_running_markets_show_4_levels_each_side(ex):
+    (alice,) = join_all(ex, "Alice")
+    for price in range(1, 13):
+        ex.place_limit("cars", alice, BUY, price, 1)
+        ex.place_limit("cars", alice, SELL, 100 + price, 1)
+    open_market(ex, market_id="homes")
+    open_market(ex, market_id="wheat")
+
+    state = snapshot_message(ex, alice)
+
+    assert state["book_depth"] == 4
+    assert [level["price"] for level in state["markets"]["cars"]["bids"]] == [12, 11, 10, 9]
+    assert [level["price"] for level in state["markets"]["cars"]["asks"]] == [101, 102, 103, 104]
+
+
+def test_settling_one_of_three_markets_goes_back_to_5_levels(ex):
+    (alice,) = join_all(ex, "Alice")
+    open_market(ex, market_id="homes")
+    open_market(ex, market_id="wheat")
+    ex.settle_market("wheat", 100)
+
+    assert update_message(ex, alice, [])["book_depth"] == 5
 
 
 def test_no_running_market_means_no_columns_and_the_full_depth(ex):

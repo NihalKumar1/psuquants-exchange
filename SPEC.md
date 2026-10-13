@@ -149,7 +149,7 @@ The admin picks a trader and a market. The screen shows:
 34. Names: trimmed, **1–20 characters**, unique **ignoring case** ("alice" is refused if "Alice" exists).
 35. Same trader in two tabs or devices: **the newest connection wins**. The old tab is told "opened elsewhere" and disconnected.
 36. Book display: the **top 10 price levels** on each side, with owner names and sizes. *(From M5: 5 levels when several markets are running; see Q76.)*
-37. Trade tape: **all trades**, newest first, scrollable.
+37. Trade tape: **all trades**, newest first, scrollable (inside its own box, Q120).
 38. Positions table: **every joined trader**, including those at 0.
 39. Late joiners: the **admin can lock or unlock joining** (the control arrives in M3). Joining is always open in M2. *(Done in M3.)*
 40. M2 setup: until the admin page exists, the server creates one open test market at startup (env vars `TEST_MARKET_TITLE`, `TEST_MARKET_TICK`, `TEST_MARKET_MAX_POSITION`; defaults "Test market", 1, 100) and prints the room code in the console. **This is temporary and removed in M3.** *(Removed in M3.)*
@@ -196,17 +196,17 @@ Milestones 5 and 6 are skipped for now *(both done since)*. **Reset** moves from
 71. Render is set up from a **`render.yaml` Blueprint**. The instructor creates the GitHub repo and pushes.
 
 ### Answered after the first Render load test (2026-09-28)
-72. The trader page's order book has a **fixed layout** so the clickable best bid and offer never move: always **10 offer slots, the divider, then 10 bid slots** (Q36's depth; 5 and 5 when several markets are running, Q76), every row the same height, empty slots left blank. The best offer is always directly above the divider and the best bid directly below it.
+72. The trader page's order book has a **fixed layout** so the clickable best bid and offer never move: always **10 offer slots, the divider, then 10 bid slots** (Q36's depth; 5 and 5 when several markets are running, Q76), every row the same height (since 2026-10-12 that height is sized to fit the screen, Q122), empty slots left blank. The best offer is always directly above the divider and the best bid directly below it.
 73. When the names at one price don't fit on one line, they are **cut off with "…"**; hovering the row shows the full list (in time priority).
 
 ### Answered during milestone 5 planning (2026-10-05)
 74. The trader page shows several markets **side by side**: every running market gets its own column at the same time. There are no tabs.
 75. Only **running** markets get a column (AUCTION, MM_QUOTING, FORCED_TRADE, OPEN, HALTED). CREATED and SETTLED markets have none. *(This replaces the Q50/Q61 rule.)*
-76. Book depth: **10 / 10 when one market is running, 5 / 5 when several are.** The fixed layout (Q72) stays; the book changes shape when a second market starts or the second-to-last one settles.
+76. Book depth: **10 / 10 when one market is running, 5 / 5 when several are.** The fixed layout (Q72) stays; the book changes shape when a second market starts or the second-to-last one settles. *(Since 2026-10-12: 4 / 4 when three or more are running; see Q122.)*
 77. When there are more markets than fit across the screen, the columns **squeeze to fit** (one row, narrower columns).
 78. Each column holds that market's **own position, realized, MTM and total PnL**, its resting orders and **"Cancel all (this market)"**. **Total PnL, click size and "Cancel all (all markets)"** stay in the top bar. *(Since 2026-10-05 the resting orders are in the sidebar instead; see Q93–Q96.)*
 79. The positions table and the trade tape are **combined**: the tape lists trades from every market with a Market column, and the positions table has one column per market. Both **keep settled markets** (but not CREATED ones). A trader's settled PnL shows only inside Total PnL.
-80. Positions and tape sit in a **right sidebar**; the market columns share the rest of the width. *(Resting orders joined them on 2026-10-05; see Q93.)*
+80. Positions and tape sit in a **right sidebar**; the market columns share the rest of the width. *(Resting orders joined them on 2026-10-05; see Q93. Each list scrolls inside its own box, Q120.)*
 81. A rejection uses the one message line under the top bar, **prefixed with the market title** ("Cars: rejected: …"). *(Since 2026-10-05 that line is a floating red banner that goes away after 3 s; see Q87–Q92.)*
 82. Market columns (and the positions table's market columns) go **oldest on the left** (creation order).
 83. When no market is running: "No market is running. Wait for the instructor." where the columns go. The sidebar and Total PnL still show.
@@ -256,6 +256,20 @@ When one of a trader's orders fills, their page flashes and says what happened.
    - A negative average is cut **towards zero**: −36.25 → −36.2.
 117. When the MM's buys and sells cancel out (bought 30 and sold 30), the flash and message use the page's **neutral accent colour**.
 118. "avg" is written **only when the fills were at different prices**: "You bought 25 of Cars at 36", but "You bought 25 of Cars at avg 36.2".
+
+### Answered while redesigning the trader layout (2026-10-12)
+Traders had to scroll to reach order entry and lost sight of the book while they did.
+119. The trader page fits a **1366×768 laptop** (about 1366×650 inside the browser) with **no page scrolling**: the book, order entry, the PnL tiles, Cancel all and the sidebar are all visible at once. Bigger screens get more room.
+120. Lists that can be longer than their space (Resting orders, Positions, Trades) sit in **fixed boxes that scroll inside**; their headings stay put. The page itself never scrolls (except in the fallbacks of Q123).
+121. **One market**: the book on the left at full height, the controls (order entry or Trade or Tighten, the tiles, Cancel all) in a column to its right. **Several markets**: each column has the book on top and compact controls under it.
+122. Book depth may go **as low as 3 levels per side**. It is **10 for one running market, 5 for two, 4 for three or more** (replaces Q76's "5 when several"). Book rows are sized to fit the space (between 20 and 34 px), still all the same height, so the best bid and offer never move (Q72).
+123. Fallbacks: below 1100 px wide the Q84 stacked layout stays (the page scrolls). If the window is shorter than 600 px, the page scrolls rather than squashing the book further.
+
+### Answered while adding the average price to the Position tile (2026-10-12)
+Each market's Position tile also shows the average price the trader is in at: "+10 @ 117,500".
+124. The average is of the **open lots, first in, first out** (Q9): buy 10 @ 100, buy 10 @ 110, sell 10 @ 120 leaves "+10 @ 110". So MTM is always (mark − average) × position.
+125. It is **cut to 1 decimal** like the fill alerts (Q116): 36.25 → 36.2, −36.25 → −36.2; whole numbers have no decimal.
+126. When the trader is **flat**, the tile shows **just 0** (no average).
 
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.
