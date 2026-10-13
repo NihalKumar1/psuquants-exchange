@@ -262,7 +262,7 @@ Traders had to scroll to reach order entry and lost sight of the book while they
 119. The trader page fits a **1366×768 laptop** (about 1366×650 inside the browser) with **no page scrolling**: the book, order entry, the PnL tiles, Cancel all and the sidebar are all visible at once. Bigger screens get more room.
 120. Lists that can be longer than their space (Resting orders, Positions, Trades) sit in **fixed boxes that scroll inside**; their headings stay put. The page itself never scrolls (except in the fallbacks of Q123).
 121. **One market**: the book on the left at full height, the controls (order entry or Trade or Tighten, the tiles, Cancel all) in a column to its right. **Several markets**: each column has the book on top and compact controls under it.
-122. Book depth may go **as low as 3 levels per side**. It is **10 for one running market, 5 for two, 4 for three or more** (replaces Q76's "5 when several"). Book rows are sized to fit the space (between 20 and 34 px), still all the same height, so the best bid and offer never move (Q72).
+122. Book depth may go **as low as 3 levels per side**. It is **10 for one running market, 5 for two, 4 for three or more** (replaces Q76's "5 when several"). Book rows are sized to fit the space (at least 20 px; since Q127 with no maximum), still all the same height, so the best bid and offer never move (Q72).
 123. Fallbacks: below 1100 px wide the Q84 stacked layout stays (the page scrolls). If the window is shorter than 600 px, the page scrolls rather than squashing the book further.
 
 ### Answered while adding the average price to the Position tile (2026-10-12)
@@ -270,6 +270,10 @@ Each market's Position tile also shows the average price the trader is in at: "+
 124. The average is of the **open lots, first in, first out** (Q9): buy 10 @ 100, buy 10 @ 110, sell 10 @ 120 leaves "+10 @ 110". So MTM is always (mark − average) × position.
 125. It is **cut to 1 decimal** like the fill alerts (Q116): 36.25 → 36.2, −36.25 → −36.2; whole numbers have no decimal.
 126. When the trader is **flat**, the tile shows **just 0** (no average).
+
+### Answered while enlarging the order book (2026-10-12)
+On a big screen the 34 px row limit left much of the book empty.
+127. The book's rows **fill the whole book panel** (no maximum height), and its **text grows with the space**: prices up to 26 px, sizes a little smaller, names smaller still so more of them fit (the names keep about 40% of the width). The **depth does not change** (Q122).
 
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.

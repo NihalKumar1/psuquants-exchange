@@ -489,33 +489,44 @@ tbody tr:last-child td { border-bottom: none; }
   overflow: hidden;
 }
 #trade-screen .book-panel { padding: 4px 8px; }
-.book { table-layout: fixed; }
-.book th:nth-child(2), .book th:nth-child(4) { width: 72px; }
-.book th:nth-child(3) { width: 104px; }
 /* Every row is exactly one line and the same height, so the book never changes shape and the
-   best bid and offer stay put (see renderBook in trader.js). The height is the panel's height
-   shared equally by all the rows (--book-rows, set by renderBook: both sides, the divider and
-   the heading), but never under 20px or over 34px. Names that don't fit end in "…"; hovering
-   the row shows them all. */
-.book tr { height: clamp(20px, calc((100cqh - 4px) / var(--book-rows, 22)), 34px); }
+   best bid and offer stay put (see renderBook in trader.js). The rows share the panel's whole
+   height equally (--book-rows, set by renderBook: both sides, the divider and the heading),
+   never less than 20px each.
+   The text grows with the space. --font is the size of the prices: as big as the row height
+   allows (so text never stretches a row) and as the book's width allows (so the names keep
+   about 40% of it), between 12px and 26px. Sizes are a little smaller, and names smaller
+   still, so more of them fit. The price and size columns are as wide as their numbers need at
+   that size (prices up to "-123,000", sizes up to "1,250"), and the names get the rest. Names
+   that don't fit end in "…"; hovering the row shows them all. */
+.book {
+  table-layout: fixed;
+  --pad: 10px;  /* space at each side of a cell */
+  --row: calc((100cqh - 4px) / var(--book-rows, 22));
+  --font: clamp(12px, min(var(--row) * 0.62, (60cqw - 6 * var(--pad)) / 10.2), 26px);
+}
+.book th:nth-child(2), .book th:nth-child(4) { width: calc(var(--font) * 2.6 + 2 * var(--pad)); }
+.book th:nth-child(3) { width: calc(var(--font) * 5 + 2 * var(--pad)); }
+.book tr { height: max(20px, var(--row)); }
 .book th {
-  padding: 0 10px;
-  line-height: 16px;
+  padding: 0 var(--pad);
+  font-size: max(11px, var(--font) * 0.6);
+  line-height: 1.2;
   vertical-align: middle;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .book td {
-  padding: 0 10px;
-  font-size: 13px;
-  line-height: 16px;  /* under the smallest row height, so text never stretches a row */
+  padding: 0 var(--pad);
+  font-size: calc(var(--font) * 0.85);
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.book td.names { color: var(--muted); }
-.book td.price { font: 700 14px var(--mono); }
+.book td.names { color: var(--muted); font-size: max(12px, var(--font) * 0.65); }
+.book td.price { font: 700 var(--font)/1.2 var(--mono); }
 .book tr.bid td.price { color: var(--bid); }
 .book tr.ask td.price { color: var(--ask); }
 
@@ -542,22 +553,18 @@ tbody tr:last-child td { border-bottom: none; }
 /* The divider between offers and bids: last price and mark. */
 .book tr.spread td {
   text-align: center;
-  font: 12px var(--mono);
+  font: max(12px, var(--font) * 0.65)/1.2 var(--mono);
   color: var(--muted);
-  padding: 0 9px;
+  padding: 0 var(--pad);
   border-top: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
 }
 .book tr.spread b { color: var(--text); font-weight: 600; }
 
-/* A narrow book (several markets side by side, or a phone): a tighter ladder so the names
-   still fit. */
+/* A narrow book (several markets side by side, or a phone): less space around each cell, so
+   the names still fit. */
 @container book (max-width: 480px) {
-  .book th:nth-child(2), .book th:nth-child(4) { width: 36px; }
-  .book th:nth-child(3) { width: 76px; }
-  .book th, .book td { padding: 0 5px; }
-  .book td { font-size: 12px; }
-  .book td.price { font-size: 12px; }
+  .book { --pad: 5px; }
 }
 
 /* --- Fallbacks ----------------------------------------------------------------------------- */
@@ -571,7 +578,7 @@ tbody tr:last-child td { border-bottom: none; }
   .market-area #markets { grid-auto-flow: row; grid-template-rows: none; }
   .market-body { grid-template-rows: auto; }
   .book-panel { container-type: inline-size; }
-  .book tr { height: 30px; }
+  .book { --row: 30px; }
   .sidebar .orders-panel { max-height: none; }
   .sidebar .scroll { max-height: 420px; }
 }
