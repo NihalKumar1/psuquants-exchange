@@ -5,12 +5,15 @@
 
 const SECRET_KEY = "psuq-admin-secret";  // the same remembered password as the admin page
 const PICK_KEY = "psuq-review-pick";     // the last market and trader picked, as JSON
+const RANGE_KEY = "psuq-review-range";   // each market's typed price axis Min/Max, as JSON
 
 let socket = null;
 let secret = null;
 let loggedIn = false;
 let state = null;    // the latest "review_state": {options, review}
 let pick = loadPick();  // {market_id, trader_id}; either may be ""
+let ranges = loadRanges();  // {rangeKey: {min, max}}: the text typed in the Min and Max boxes
+let rangeShown = null;      // the rangeKey whose Min and Max are in the boxes now
 
 // --- Connection ---------------------------------------------------------------------------
 
@@ -58,6 +61,14 @@ function loadPick() {
   return { market_id: "", trader_id: "" };
 }
 
+function loadRanges() {
+  try {
+    const saved = JSON.parse(load(RANGE_KEY));
+    if (saved && typeof saved === "object") return saved;
+  } catch { /* nothing saved, or something unreadable: every market fits its prices */ }
+  return {};
+}
+
 function pickIsOffered() {
   // True if the picked market and trader are both in the pickers (e.g. not after a reset).
   return state.options.markets.some((market) => market.market_id === pick.market_id)
@@ -101,6 +112,7 @@ function render() {
   document.getElementById("fills-heading").textContent =
     review ? `${review.trader}'s trades in ${review.title}` : "Trades";
   renderFills(review);
+  renderRangeBoxes(review);
   renderChart(review);
 }
 
@@ -206,9 +218,70 @@ function totalRow(totalEdge, columns) {
 // are step lines: each value holds until the next change. The trader's fills are triangles
 // (green ▲ buy, red ▼ sell), info drops are dashed vertical lines, and once settled a
 // horizontal line shows the true value.
+// The price axis fits every price, unless the instructor typed a Min or Max: one wild trade
+// would otherwise squash the rest (SPEC Q128–Q132). Lines and fills beyond it are cut off.
 
 const CHART_HEIGHT = 380;
 const MARGIN = { top: 28, right: 20, bottom: 30, left: 76 };
+const RANGE_BOXES = { min: "chart-min", max: "chart-max" };
+
+function rangeKey(review) {
+  // Which market the Min and Max belong to: its id and when it opened. Ids are reused after a
+  // Reset ("m1" again), so the open time keeps an old game's range off the new market.
+  if (review === null || review.chart === null) return null;
+  return `${review.market_id} ${review.chart.start}`;
+}
+
+function renderRangeBoxes(review) {
+  // Fill the boxes only when the market changes: this runs every second, and refilling them
+  // each time would undo what the instructor is typing.
+  const key = rangeKey(review);
+  if (key === rangeShown) return;
+  rangeShown = key;
+  const typed = (key && ranges[key]) || { min: "", max: "" };
+  for (const [end, id] of Object.entries(RANGE_BOXES)) {
+    const box = document.getElementById(id);
+    box.value = typed[end];
+    box.disabled = key === null;
+    box.classList.remove("wrong");
+  }
+}
+
+for (const [end, id] of Object.entries(RANGE_BOXES)) {
+  document.getElementById(id).addEventListener("input", (event) => {
+    if (rangeShown === null) return;
+    ranges[rangeShown] = { ...(ranges[rangeShown] || { min: "", max: "" }), [end]: event.target.value };
+    save(RANGE_KEY, JSON.stringify(ranges));
+    renderChart(state.review);
+  });
+}
+
+function typedRange(review) {
+  // The Min and Max typed for this market, as numbers, or null where a box is blank.
+  const typed = ranges[rangeKey(review)] || { min: "", max: "" };
+  const toNumber = (text) => (text === "" || !Number.isFinite(Number(text)) ? null : Number(text));
+  return { min: toNumber(typed.min), max: toNumber(typed.max) };
+}
+
+function priceRange(review, prices) {
+  // [low, high] for the price axis: the typed Min and Max, else the lowest and highest price.
+  // The settlement value always stays in view. Min >= Max is ignored, and outlines the boxes.
+  const typed = typedRange(review);
+  const valid = typed.min === null || typed.max === null || typed.min < typed.max;
+  for (const id of Object.values(RANGE_BOXES)) document.getElementById(id).classList.toggle("wrong", !valid);
+
+  let low = valid && typed.min !== null ? typed.min : Math.min(...prices);
+  let high = valid && typed.max !== null ? typed.max : Math.max(...prices);
+  if (low > high) {  // only one box typed, beyond every price: fit the prices instead
+    low = Math.min(...prices);
+    high = Math.max(...prices);
+  }
+  if (review.settlement_value !== null) {
+    low = Math.min(low, review.settlement_value);
+    high = Math.max(high, review.settlement_value);
+  }
+  return [low, high];
+}
 
 function renderChart(review) {
   const box = document.getElementById("chart");
@@ -233,7 +306,7 @@ function renderChart(review) {
     review.settlement_value,
   ].filter((price) => price !== null);
   if (prices.length === 0) prices.push(0);
-  const ticks = priceTicks(Math.min(...prices), Math.max(...prices));
+  const ticks = priceTicks(...priceRange(review, prices));
   const low = ticks[0], high = ticks[ticks.length - 1];
   const y = (price) => MARGIN.top + (high - price) / (high - low) * (CHART_HEIGHT - MARGIN.top - MARGIN.bottom);
 
@@ -264,9 +337,21 @@ function renderChart(review) {
     svg.append(svgText(`Settled ${number(review.settlement_value)}`, { x: width - MARGIN.right, y: level - 6, class: "settle-note", "text-anchor": "end" }));
   }
 
+  // Prices beyond the axis are cut off at the plot area (8 px spare at the top and bottom, so a
+  // fill triangle right on the top or bottom gridline still shows whole).
+  const clip = svgElement("clipPath", { id: "plot-area" });
+  clip.append(svgElement("rect", {
+    x: MARGIN.left - 8, y: MARGIN.top - 8,
+    width: width - MARGIN.left - MARGIN.right + 16, height: CHART_HEIGHT - MARGIN.top - MARGIN.bottom + 16,
+  }));
+  const defs = svgElement("defs", {});
+  defs.append(clip);
+  const plot = svgElement("g", { "clip-path": "url(#plot-area)" });
+  svg.append(defs, plot);
+
   // The last price and the mark, as step lines that run to the end of the chart.
-  svg.append(svgElement("path", { d: stepPath(chart.points, "last", x, y, chart.end), class: "line last" }));
-  svg.append(svgElement("path", { d: stepPath(chart.points, "mark", x, y, chart.end), class: "line mark" }));
+  plot.append(svgElement("path", { d: stepPath(chart.points, "last", x, y, chart.end), class: "line last" }));
+  plot.append(svgElement("path", { d: stepPath(chart.points, "mark", x, y, chart.end), class: "line mark" }));
 
   // The trader's fills.
   for (const fill of chart.fills) {
@@ -276,7 +361,7 @@ function renderChart(review) {
       : [[cx, cy + 7], [cx - 7, cy - 6], [cx + 7, cy - 6]];  // ▼
     const marker = svgElement("polygon", { points: corners.join(" "), class: `fill ${fill.side}` });
     marker.append(svgElement("title", {}, `${fill.side === "buy" ? "Bought" : "Sold"} at ${number(fill.price)}`));
-    svg.append(marker);
+    plot.append(marker);
   }
 
   box.replaceChildren(svg);

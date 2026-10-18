@@ -275,6 +275,14 @@ Each market's Position tile also shows the average price the trader is in at: "+
 On a big screen the 34 px row limit left much of the book empty.
 127. The book's rows **fill the whole book panel** (no maximum height), and its **text grows with the space**: prices up to 26 px, sizes a little smaller, names smaller still so more of them fit (the names keep about 40% of the width). The **depth does not change** (Q122).
 
+### Answered while fixing the review chart's price axis (2026-10-17)
+One wild trade stretched the chart's price axis and squashed every other price into a flat line.
+128. The chart's price axis has **Min and Max boxes** next to the legend. A blank box fits that side to the prices on the chart. There is no automatic outlier detection and no "show all" toggle.
+129. Lines and fill triangles beyond the range are **cut off** at the chart edge (no label).
+130. The **settlement line is always in view**: the range stretches to include it.
+131. The boxes are **remembered per market** in this browser, so they survive a reload. A Reset's new markets start blank (even though market ids like `m1` are reused).
+132. If Min ≥ Max, the boxes are outlined in red and the chart fits everything.
+
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.
 2. FastAPI server, WebSockets, join with name + room code, and a minimal trader UI for one market in continuous trading.

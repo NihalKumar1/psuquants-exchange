@@ -83,7 +83,8 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   Eastern times and names in place of trader ids. Needs `tzdata` on Windows.
 - `exchange/server/main.py`: the app uvicorn runs (`build_app(environ)` reads `ADMIN_SECRET`).
 - `exchange/server/static/`: trader page, admin page, review page (`review.js` draws the chart as
-  plain SVG), and `common.js` helpers (plain HTML/JS/CSS, no build step).
+  plain SVG; its price axis has instructor Min/Max boxes, remembered per market in localStorage),
+  and `common.js` helpers (plain HTML/JS/CSS, no build step).
 - `scripts/load_test.py`: the 60-bot load test (also imported by `tests/test_load_test.py`).
   `scripts/demo_fill.py` (gitignored) fills a book for screenshots.
 - `render.yaml`: the Render Blueprint (free plan, Python 3.14.4, one worker).
