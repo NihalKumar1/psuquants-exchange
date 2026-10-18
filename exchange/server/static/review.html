@@ -49,6 +49,11 @@
           <span><i class="key drop"></i>Info drop</span>
           <span><i class="key settle"></i>Settlement</span>
         </div>
+        <!-- The price axis range: blank fits the prices on the chart (SPEC Q128). -->
+        <div class="chart-range">
+          <label>Min <input id="chart-min" type="number" step="any" placeholder="auto"></label>
+          <label>Max <input id="chart-max" type="number" step="any" placeholder="auto"></label>
+        </div>
       </div>
       <div id="chart"></div>
     </section>

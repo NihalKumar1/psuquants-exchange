@@ -73,6 +73,18 @@ def test_review_page_is_served(client):
     assert "review" in response.text.lower()
 
 
+def test_review_page_has_min_and_max_boxes_for_the_price_axis(client):
+    # SPEC Q128: one wild trade would otherwise squash the chart. The range logic itself is
+    # browser JS (review.js), checked by hand.
+    page = client.get("/review").text
+    script = client.get("/static/review.js")
+
+    assert 'id="chart-min"' in page
+    assert 'id="chart-max"' in page
+    assert script.status_code == 200
+    assert "chart-min" in script.text and "chart-max" in script.text
+
+
 def test_a_wrong_secret_is_refused_on_the_review_socket(client):
     with client.websocket_connect("/review/ws") as ws:
         ws.send_json({"type": "admin_login", "secret": "wrong"})
