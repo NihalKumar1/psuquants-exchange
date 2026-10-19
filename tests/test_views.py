@@ -345,7 +345,8 @@ def test_admin_view_has_everyones_positions_and_pnl(ex, clock):
         "position": -4, "realized": 0, "unrealized": 20, "total": 20,
     }
     assert rows["Bob"]["markets"]["cars"]["total"] == -20
-    assert rows["Bob"]["total"] == {"realized": 0, "unrealized": -20, "total": -20}
+    assert rows["Bob"]["total"] == {"realized": 0, "unrealized": -20, "total": -20,
+                                    "equity": 99_980}
 
 
 # --- Trade or Tighten -----------------------------------------------------------------------

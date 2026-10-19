@@ -53,12 +53,23 @@
             <label>Max position <input id="f-max-position" type="number" min="1" step="1" required></label>
             <label>Forced-trade size <input id="f-forced-size" type="number" min="1" step="1" required></label>
             <label>Forced-trade timer (s) <input id="f-forced-seconds" type="number" min="1" step="1" required></label>
+            <label title="Contract multiplier: PnL in dollars = PnL in points × this. Pick it so a typical miss costs about the same in every market (e.g. 0.01 for a ~100,000 market, 0.2 for a ~7,000 one).">$ per point
+              <input id="f-dollars" type="number" min="0" step="any" value="1" required></label>
           </div>
           <div class="form-buttons">
             <button id="market-submit" type="submit" class="primary">Create market</button>
             <button id="market-cancel-edit" type="button" class="ghost" hidden>Cancel edit</button>
           </div>
         </form>
+      </section>
+
+      <section class="panel">
+        <h2>Starting equity <span id="starting-equity" class="muted"></span></h2>
+        <form id="equity-form" class="entry info">
+          <input id="equity-input" type="number" min="0" step="1" autocomplete="off" placeholder="New amount ($)">
+          <button type="submit" class="primary">Set</button>
+        </form>
+        <p class="hint">Everyone's equity is this plus their total PnL in dollars (each market's PnL × its $ per point).</p>
       </section>
 
       <section class="panel">
@@ -82,7 +93,7 @@
           <table id="markets">
             <thead>
               <tr>
-                <th>Market</th><th>Status</th><th class="num">Tick</th><th class="num">Max pos</th>
+                <th>Market</th><th>Status</th><th class="num">Tick</th><th class="num">Max pos</th><th class="num">$/pt</th>
                 <th class="num">Bid</th><th class="num">Offer</th><th class="num">Last</th>
                 <th class="num">Mark</th><th>Actions</th>
               </tr>

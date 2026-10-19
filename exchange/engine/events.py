@@ -27,17 +27,19 @@ class MarketCreated(Event):
     max_position: int
     forced_trade_size: int
     forced_trade_seconds: int
+    dollars_per_point: float = 1  # 1 in logs saved before multipliers existed
 
 
 @dataclass(frozen=True, kw_only=True)
 class MarketEdited(Event):
-    """New settings for a market that hasn't opened yet (all five, even unchanged ones)."""
+    """New settings for a market that hasn't opened yet (all of them, even unchanged ones)."""
 
     title: str
     tick_size: int
     max_position: int
     forced_trade_size: int
     forced_trade_seconds: int
+    dollars_per_point: float = 1
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -118,6 +120,13 @@ class InfoDropMarked(Event):
 
 
 # --- Traders --------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, kw_only=True)
+class StartingEquitySet(Event):
+    """The dollars every trader's equity starts at, before any PnL (SPEC Q148)."""
+
+    amount: int
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -269,6 +278,7 @@ EVENT_TYPES = {
         TraderRenamed,
         JoiningLocked,
         JoiningUnlocked,
+        StartingEquitySet,
         WidthSubmitted,
         WidthsWithdrawn,
         MarketMakerQuoted,

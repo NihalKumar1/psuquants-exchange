@@ -26,6 +26,7 @@ The games are "Trade or Tighten" estimation markets. Examples are "Number of car
   - Max absolute position per trader
   - Forced-trade size
   - Forced-trade timer length in seconds
+  - Contract multiplier, **$ per point** (Q144)
 - Market lifecycle: `CREATED → AUCTION → MM_QUOTING → FORCED_TRADE → OPEN ⇄ HALTED → SETTLED`
   - The admin may also open a market directly (`CREATED → OPEN`), skipping Trade or Tighten. This is a permanent option.
 
@@ -51,6 +52,7 @@ The games are "Trade or Tighten" estimation markets. Examples are "Number of car
 - Each trader has, per market and in total: position, realized PnL, mark-to-market (unrealized) PnL, and total PnL. Each trader always sees their own numbers live.
 - **Mark price = mid of best bid and best offer.** If either side of the book is empty, **use the last traded price.**
 - After settlement, the mark is the settlement value.
+- Each market's PnL is in its own price units (points). **Total PnL is in dollars**: each market's PnL × its $ per point, added up. **Equity** = the game's starting equity + total PnL (Q144–Q152).
 
 ## Information drops
 - The instructor announces info drops out loud or on a slide. They are **not pushed through the app.**
@@ -298,6 +300,18 @@ The exec asked for the features most trading platforms have. They picked amend, 
 141. **My trades:** the Trades panel has an **All / Mine** switch. Mine lists only the trader's own trades (forced trades included): time, market, **Buy/Sell**, price, size and **who with**. *(proposed)* The browser remembers the choice. Updates carry each trade's `buyer_id` and `seller_id` (already public in the book) so the page can pick out its own trades even after a rename.
 142. **Keyboard shortcuts** *(proposed keys)*, only when the cursor is not in a box: **B** → the Bid price box, **S** → the Offer price box, **Q** → the Quote's bid box, **Esc** → cancel all of my orders in that market. In a box, **Esc** just leaves the box (so Esc twice cancels all). **Enter** sends the form the cursor is in. A hint is in the top bar.
 143. *(proposed)* With several markets, shortcuts act on the **market last clicked or typed in** (the first column until then); its title turns blue.
+
+### Answered while adding contract multipliers and starting equity (2026-10-18)
+Markets priced near 7,000 and near 120,000 were added up point for point, so the expensive market decided who was winning. The exec chose a contract multiplier per market (A) plus a starting equity shown as a score (B). Details marked *(proposed)* were chosen while building and await the instructor's review.
+144. Each market has a **contract multiplier, "$ per point"**, set by the admin when creating (or editing, before it opens) the market, like a future's multiplier (the E-mini is $50 per index point). PnL in dollars = PnL in points × $ per point. The admin picks it so a typical miss costs about the same in every market (e.g. $0.01 for a ~120,000 market, $0.20 for a ~7,000 one).
+145. *(proposed)* $ per point is **any number above 0** (decimals allowed). It **defaults to 1**: the form starts at 1, and a create command without it (older scripts, the load test) gets 1. Logs saved before this existed replay with 1.
+146. **Equity is a score only.** It never blocks an order; **max position stays the only risk limit**. (Using equity as a margin limit was considered and rejected: it would need a worst-case price for every market.)
+147. Each market's own numbers (Position tile, Realized, MTM, Total, the admin's per-market PnL, the review screen, the export) **stay in points**. Only **Total PnL and Equity are in dollars**.
+148. **Starting equity** is one amount for the whole game, set by the admin (**default $100,000**, *(proposed)*): a whole number of dollars, 0 or more. Changing it mid-game is allowed (it only shifts everyone's score). It is logged as a `StartingEquitySet` event.
+149. *(proposed)* **Reset keeps the starting equity** (like the room code).
+150. Traders see **only their own** equity and total PnL (top bar), as Q10 requires. The admin sees everyone's Total PnL ($) and Equity. There is no leaderboard. *(Open: should the instructor be able to show a leaderboard at the end?)*
+151. *(proposed)* Dollar amounts are **rounded to the cent** before being sent, and shown with cents only when there are some ("$100,000", "-$12.50"). Each market's title line shows its multiplier ("$0.01/pt").
+152. *(proposed)* The export is unchanged except that events.csv/events.json carry `dollars_per_point` on market events and the new `StartingEquitySet` event.
 
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.

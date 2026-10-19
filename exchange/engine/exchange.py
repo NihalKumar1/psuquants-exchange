@@ -8,6 +8,7 @@ Every command follows the same three steps:
 Because of this, Exchange.replay(events) rebuilds exactly the same state from a saved log.
 """
 
+import math
 import random
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -27,6 +28,7 @@ from .events import (
     MarketSettled,
     OrderAccepted,
     Rejected,
+    StartingEquitySet,
     TradeExecuted,
     TraderJoined,
     TraderKicked,
@@ -37,6 +39,7 @@ from .models import MarketConfig, MarketStatus, Side, is_whole_number
 from .positions import PnL
 
 MAX_NAME_LENGTH = 20
+DEFAULT_STARTING_EQUITY = 100_000  # dollars, until the admin sets another amount (SPEC Q148)
 REMOVED = "you were removed from the game"
 
 
@@ -56,6 +59,7 @@ class Exchange:
         self.kicked = set()  # trader_ids the admin removed (they stay in self.traders)
         self.info_drops = []  # InfoDropMarked events, oldest first
         self.joining_locked = False
+        self.starting_equity = DEFAULT_STARTING_EQUITY
         self.next_trader_id = 1
         self.next_order_id = 1
         self.next_trade_id = 1
@@ -131,6 +135,13 @@ class Exchange:
         new_name = self._check_name(new_name, renaming=trader_id)
         return self._record([TraderRenamed(trader_id=trader_id,
                                            old_name=self.traders[trader_id], new_name=new_name)])
+
+    def set_starting_equity(self, amount):
+        """The dollars everyone's equity starts at. It only changes the score: equity is this
+        plus total PnL, so it can be changed at any time."""
+        if not is_whole_number(amount) or amount < 0:
+            raise ValueError("starting equity must be a whole number of dollars, 0 or more")
+        return self._record([StartingEquitySet(amount=amount)])
 
     def lock_joining(self):
         if self.joining_locked:
@@ -349,6 +360,7 @@ class Exchange:
                 market_id=event.market_id, title=event.title, tick_size=event.tick_size,
                 max_position=event.max_position, forced_trade_size=event.forced_trade_size,
                 forced_trade_seconds=event.forced_trade_seconds,
+                dollars_per_point=event.dollars_per_point,
             )
             self.markets[event.market_id] = Market(config)
         elif isinstance(event, TraderJoined):
@@ -364,6 +376,8 @@ class Exchange:
             self.joining_locked = True
         elif isinstance(event, JoiningUnlocked):
             self.joining_locked = False
+        elif isinstance(event, StartingEquitySet):
+            self.starting_equity = event.amount
         elif isinstance(event, Rejected):
             pass  # recorded in the log for review; changes nothing
         else:
@@ -400,14 +414,20 @@ class Exchange:
         return max(0, (market.forced_trade_deadline() - self.clock()).total_seconds())
 
     def total_pnl(self, trader_id):
+        """PnL in dollars over every market: each market's PnL (in its own price units, or
+        points) times that market's dollars per point."""
         total = PnL(realized=0, unrealized=0)
         for market in self.markets.values():
-            total = total + market.pnl(trader_id)
+            total = total + market.pnl(trader_id).times(market.config.dollars_per_point)
         return total
+
+    def equity(self, trader_id):
+        """Starting equity plus total PnL, in dollars."""
+        return self.starting_equity + self.total_pnl(trader_id).total
 
 
 def check_settings(config):
-    """A market's five settings as a dict, with the title trimmed.
+    """A market's settings as a dict, with the title trimmed.
 
     Raises ValueError with the reason if any setting is bad.
     """
@@ -423,10 +443,15 @@ def check_settings(config):
     for label, value in whole_numbers.items():
         if not is_whole_number(value) or value < 1:
             raise ValueError(f"{label} must be a whole number of at least 1")
+    multiplier = config.dollars_per_point
+    is_number = isinstance(multiplier, (int, float)) and not isinstance(multiplier, bool)
+    if not is_number or not math.isfinite(multiplier) or multiplier <= 0:
+        raise ValueError("$ per point must be a number above 0")
     return {
         "title": title,
         "tick_size": config.tick_size,
         "max_position": config.max_position,
         "forced_trade_size": config.forced_trade_size,
         "forced_trade_seconds": config.forced_trade_seconds,
+        "dollars_per_point": config.dollars_per_point,
     }

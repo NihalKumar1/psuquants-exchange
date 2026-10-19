@@ -63,6 +63,7 @@ def market_view(exchange, market_id, depth=BOOK_DEPTH):
         "title": market.config.title,
         "tick_size": market.config.tick_size,
         "max_position": market.config.max_position,
+        "dollars_per_point": market.config.dollars_per_point,
         "status": market.status.value,
         "bids": levels_view(exchange, market, Side.BUY, depth),
         "asks": levels_view(exchange, market, Side.SELL, depth),
@@ -181,9 +182,21 @@ def position_view(market, trader_id):
 
 
 def total_view(exchange, trader_id):
-    """One trader's PnL added up over every market."""
+    """One trader's PnL added up over every market, and their equity, in dollars (each market's
+    PnL times its dollars per point). Rounded to cents, so 0.30000000000000004 is sent as 0.3."""
     pnl = exchange.total_pnl(trader_id)
-    return {"realized": pnl.realized, "unrealized": pnl.unrealized, "total": pnl.total}
+    return {
+        "realized": cents(pnl.realized),
+        "unrealized": cents(pnl.unrealized),
+        "total": cents(pnl.total),
+        "equity": cents(exchange.equity(trader_id)),
+    }
+
+
+def cents(dollars):
+    """Dollars rounded to the cent; a whole number of dollars stays a whole number (5, not 5.0)."""
+    rounded = round(dollars, 2)
+    return int(rounded) if rounded == int(rounded) else rounded
 
 
 # --- Whole messages -------------------------------------------------------------------------
@@ -326,6 +339,7 @@ def admin_message(room):
         "type": "admin_state",
         "room_code": room.code,
         "joining_locked": exchange.joining_locked,
+        "starting_equity": exchange.starting_equity,
         "unexported": room.has_unexported_changes(),  # Reset warns if this is True
         "info_drops": [
             {"time": drop.ts.isoformat(), "note": drop.note} for drop in exchange.info_drops

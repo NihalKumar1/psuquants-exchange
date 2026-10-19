@@ -124,6 +124,9 @@ class Room:
         old = self.exchange
         old_connections = self.connections
         self.exchange = Exchange(clock=old.clock, rng=old.rng)
+        # The starting equity is a setting for the room, so the new game keeps it.
+        if old.starting_equity != self.exchange.starting_equity:
+            self.exchange.set_starting_equity(old.starting_equity)
         self.connections = {}
         self.tokens = {}
         self.exported_seq = 0
@@ -185,6 +188,8 @@ class Room:
         """
         exchange = self.exchange
         kind = message["type"]
+        if kind == "set_starting_equity":
+            return exchange.set_starting_equity(message["amount"])
         if kind == "create_market":
             market_id = f"m{len(exchange.markets) + 1}"  # markets are never deleted
             return exchange.create_market(market_config(market_id, message))
@@ -220,7 +225,8 @@ class Room:
 
 
 def market_config(market_id, message):
-    """The five market settings from an admin message."""
+    """The market settings from an admin message. Scripts written before contract
+    multipliers existed (e.g. the load test) don't send dollars_per_point; it is then 1."""
     return MarketConfig(
         market_id=market_id,
         title=message["title"],
@@ -228,4 +234,5 @@ def market_config(market_id, message):
         max_position=message["max_position"],
         forced_trade_size=message["forced_trade_size"],
         forced_trade_seconds=message["forced_trade_seconds"],
+        dollars_per_point=message.get("dollars_per_point", 1),
     )

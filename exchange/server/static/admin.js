@@ -70,6 +70,7 @@ function render() {
   document.getElementById("joining-status").textContent = state.joining_locked ? "Locked" : "Open";
   document.getElementById("toggle-joining").textContent =
     state.joining_locked ? "Unlock joining" : "Lock joining";
+  document.getElementById("starting-equity").textContent = `· ${money(state.starting_equity)}`;
 
   // Stop editing a market that has opened since (e.g. in another admin tab), or that is gone
   // because the game was reset.
@@ -85,7 +86,7 @@ function renderMarkets() {
   const markets = Object.values(state.markets);
   const tbody = document.querySelector("#markets tbody");
   if (markets.length === 0) {
-    tbody.replaceChildren(emptyRow(9, "No markets yet. Create one on the left."));
+    tbody.replaceChildren(emptyRow(10, "No markets yet. Create one on the left."));
     return;
   }
   const rows = markets.map((market) => {
@@ -94,13 +95,14 @@ function renderMarkets() {
     status.className = `pill ${market.status}`;
     const row = tableRow([
       market.title, status, number(market.tick_size), number(market.max_position),
+      money(market.dollars_per_point),
       number(market.best_bid), number(market.best_ask), number(market.last_price),
       number(market.mark), marketActions(market),
     ]);
     row.cells[0].title = `${market.title} (${market.market_id})`;
     row.cells[0].className = "title";
-    for (const i of [2, 3, 4, 5, 6, 7]) row.cells[i].className = "num";
-    row.cells[8].className = "actions";
+    for (const i of [2, 3, 4, 5, 6, 7, 8]) row.cells[i].className = "num";
+    row.cells[9].className = "actions";
     return row;
   });
   tbody.replaceChildren(...rows);
@@ -168,23 +170,24 @@ function totStatus(text) {
 }
 
 function renderTraders() {
-  // One row per trader: status, then position and PnL in each market, then total PnL.
+  // One row per trader: status, then position and PnL in each market (in that market's points),
+  // then total PnL and equity in dollars (each market's PnL × its $ per point).
   const markets = Object.values(state.markets);
 
   // Two header rows: market titles on top (each over its Pos and PnL columns), then labels.
   const top = document.createElement("tr");
   top.append(headerCell(""), headerCell(""),
     ...markets.map((market) => headerCell(market.title, "market-head-cell", 2)),
-    headerCell(""), headerCell(""));
+    headerCell(""), headerCell(""), headerCell(""));
   const labels = document.createElement("tr");
   labels.append(headerCell("Trader"), headerCell("Status"),
     ...markets.flatMap(() => [headerCell("Pos", "num"), headerCell("PnL", "num")]),
-    headerCell("Total PnL", "num"), headerCell(""));
+    headerCell("Total PnL ($)", "num"), headerCell("Equity", "num"), headerCell(""));
   document.querySelector("#traders thead").replaceChildren(top, labels);
 
   const tbody = document.querySelector("#traders tbody");
   if (state.traders.length === 0) {
-    tbody.replaceChildren(emptyRow(4 + 2 * markets.length, "Nobody has joined yet."));
+    tbody.replaceChildren(emptyRow(5 + 2 * markets.length, "Nobody has joined yet."));
     return;
   }
   const rows = state.traders.map((trader) => {
@@ -194,7 +197,8 @@ function renderTraders() {
       const mine = trader.markets[market.market_id];
       cells.push(signed(mine.position), pnlCell(mine));
     }
-    cells.push(pnlCell(trader.total), traderActions(trader));
+    cells.push(pnlCell(trader.total, signedMoney, money), money(trader.total.equity),
+      traderActions(trader));
     const row = tableRow(cells);
     row.cells[1].className = trader.kicked ? "down" : trader.connected ? "up" : "muted";
     for (let i = 2; i < cells.length - 1; i++) row.cells[i].className = "num";
@@ -214,10 +218,11 @@ function headerCell(text, className = "", colSpan = 1) {
   return th;
 }
 
-function pnlCell(pnl) {
-  // Total PnL, with the realized/MTM split on hover.
-  const span = signed(pnl.total);
-  span.title = `Realized ${number(pnl.realized)} · MTM ${number(pnl.unrealized)}`;
+function pnlCell(pnl, show = signed, format = number) {
+  // Total PnL, with the realized/MTM split on hover. In points, or in dollars when given
+  // signedMoney and money.
+  const span = show(pnl.total);
+  span.title = `Realized ${format(pnl.realized)} · MTM ${format(pnl.unrealized)}`;
   return span;
 }
 
@@ -294,6 +299,7 @@ const FORM_FIELDS = {
   max_position: "f-max-position",
   forced_trade_size: "f-forced-size",
   forced_trade_seconds: "f-forced-seconds",
+  dollars_per_point: "f-dollars",
 };
 
 function startEditing(market) {
@@ -329,6 +335,17 @@ document.getElementById("market-form").addEventListener("submit", (event) => {
 });
 
 document.getElementById("market-cancel-edit").addEventListener("click", resetMarketForm);
+
+document.getElementById("equity-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const box = document.getElementById("equity-input");
+  if (box.value.trim() === "") {
+    showMessage("Enter the starting equity in dollars.");
+    return;
+  }
+  send({ type: "set_starting_equity", amount: Number(box.value) });
+  box.value = "";
+});
 
 document.getElementById("info-form").addEventListener("submit", (event) => {
   event.preventDefault();

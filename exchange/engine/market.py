@@ -367,6 +367,7 @@ class Market:
                 self.config, title=event.title, tick_size=event.tick_size,
                 max_position=event.max_position, forced_trade_size=event.forced_trade_size,
                 forced_trade_seconds=event.forced_trade_seconds,
+                dollars_per_point=event.dollars_per_point,
             )
         elif isinstance(event, MarketOpened):
             self.status = MarketStatus.OPEN

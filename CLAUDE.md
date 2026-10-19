@@ -62,6 +62,9 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   Amending an order (`Exchange.amend`, SPEC Q133–Q138): a shrink at the same price is an
   `OrderReduced` event (keeps its place); anything else is `OrderCancelled` ("amended") plus a new
   order through `decide_order(..., replaces=old_id)`.
+  Money (SPEC Q144–Q152): each market's PnL is in points; `MarketConfig.dollars_per_point` is
+  its contract multiplier. `Exchange.total_pnl` adds up PnL × multiplier (dollars) and
+  `Exchange.equity` = `starting_equity` (admin-set, default $100,000) + that total. Score only.
 - `exchange/server/room.py`: room code, join/rejoin tokens, live trader and admin connections,
   trader + admin commands, and `reset()` (new empty game, same code; connected traders are
   carried over with **new ids and tokens**, so the socket loop looks up `trader_of(connection)`

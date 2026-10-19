@@ -84,7 +84,7 @@ def test_join_gets_a_welcome_and_a_snapshot(client):
     assert welcome["token"]
     assert snapshot["markets"]["cars"]["title"] == "Test market cars"
     assert snapshot["me"]["cars"]["position"] == 0
-    assert snapshot["total"] == {"realized": 0, "unrealized": 0, "total": 0}
+    assert snapshot["total"] == {"realized": 0, "unrealized": 0, "total": 0, "equity": 100_000}
     assert snapshot["tape"] == {"cars": []}
 
 

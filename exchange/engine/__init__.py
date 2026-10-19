@@ -24,6 +24,7 @@ from .events import (
     Rejected,
     SideAssigned,
     SideChosen,
+    StartingEquitySet,
     TradeExecuted,
     TradeOrTightenCancelled,
     TraderJoined,

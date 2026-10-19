@@ -101,7 +101,9 @@ function handle(message) {
 
 function render() {
   document.getElementById("my-name").textContent = state.name;  // the admin may rename us
-  document.getElementById("total-pnl").replaceChildren(signed(state.total.total));
+  // In dollars: each market's PnL (in its own points) times its $ per point, added up.
+  document.getElementById("equity").textContent = money(state.total.equity);
+  document.getElementById("total-pnl").replaceChildren(signedMoney(state.total.total));
   renderColumns();
   renderMyOrders();
   renderPositions();
@@ -143,7 +145,8 @@ function renderColumn(column, market, mine) {
   status.textContent = statusText(market.status);
   status.className = `status pill ${market.status}`;
   // On the title line, so it is kept short; hovering shows the hint too.
-  const info = `Tick ${number(market.tick_size)}  ·  Max position ${number(market.max_position)}`;
+  const info = `Tick ${number(market.tick_size)}  ·  Max position ${number(market.max_position)}` +
+    `  ·  ${perPoint(market.dollars_per_point)}`;
   part(column, "market-info").textContent = info;
   part(column, "market-info").title = info + "  ·  Click the best bid or offer to trade";
   for (const name of ["buy-price", "sell-price", "quote-bid", "quote-ask", "width-input", "mm-bid", "mm-ask"]) {

@@ -169,7 +169,7 @@ def test_events_csv_lists_every_event_with_names_in_place_of_ids(ex):
         "seq": "1", "time": "2026-09-27 05:30:00.000", "type": "MarketCreated",
         "market_id": "cars", "market": "Test market cars", "trader": "",
         "details": "title=Test market cars; tick_size=1; max_position=1000; "
-                   "forced_trade_size=10; forced_trade_seconds=30",
+                   "forced_trade_size=10; forced_trade_seconds=30; dollars_per_point=1",
     }
     trade = next(row for row in rows if row["type"] == "TradeExecuted")
     assert "buyer_id=Alice; seller_id=Bob" in trade["details"]
