@@ -14,7 +14,7 @@ Nothing here knows about WebSockets: a "connection" is whatever object the calle
 
 import secrets
 
-from exchange.engine import Exchange, MarketConfig, Side, TraderJoined
+from exchange.engine import Exchange, MarketConfig, Side, StartingEquitySet, TraderJoined
 
 
 def new_room_code():
@@ -39,9 +39,10 @@ class Room:
         self.exported_seq = len(self.exchange.events)
 
     def has_unexported_changes(self):
-        """True if something happened since the last export. People joining doesn't count:
-        a game where nothing else happened has nothing worth keeping."""
-        return any(not isinstance(event, TraderJoined)
+        """True if something happened since the last export. People joining and the starting
+        equity being set (Reset logs it in the new game) don't count: a game where nothing else
+        happened has nothing worth keeping."""
+        return any(not isinstance(event, (TraderJoined, StartingEquitySet))
                    for event in self.exchange.events[self.exported_seq:])
 
     # --- Joining --------------------------------------------------------------------------

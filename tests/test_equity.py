@@ -234,3 +234,13 @@ def test_reset_keeps_the_starting_equity():
     room.reset()
 
     assert room.exchange.starting_equity == 25_000
+
+
+def test_a_new_game_that_kept_the_starting_equity_has_nothing_to_export():
+    # Reset logs the kept starting equity in the new game; that alone isn't worth exporting.
+    room = Room(code="1234", exchange=Exchange())
+    room.handle_admin({"type": "set_starting_equity", "amount": 25_000})
+
+    room.reset()
+
+    assert room.has_unexported_changes() is False

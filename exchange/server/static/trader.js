@@ -358,13 +358,18 @@ function renderMyOrders() {
     row.cells[3].className = "num";
     return row;
   });
+  // Every update rebuilds the table. If the cursor was in the amend row, put it back afterwards;
+  // if the trader has moved on to another box (or the book), leave the cursor there.
+  const cursorInAmend = editing !== null && tbody.contains(document.activeElement);
   tbody.replaceChildren(...rows);
-  // Every update rebuilds the table, so put the cursor back in the box being typed in.
-  if (editing) {
-    const box = tbody.querySelector(`input[data-field="${editing.field}"]`);
-    box.focus();
-    box.setSelectionRange(box.value.length, box.value.length);
-  }
+  if (cursorInAmend) focusAmendBox();
+}
+
+function focusAmendBox() {
+  // The cursor goes in the amend box last typed in (price at first), after what is typed there.
+  const box = document.querySelector(`#my-orders input[data-field="${editing.field}"]`);
+  box.focus();
+  box.setSelectionRange(box.value.length, box.value.length);
 }
 
 function orderButtons(marketId, order) {
@@ -373,6 +378,7 @@ function orderButtons(marketId, order) {
     editing = { marketId, orderId: order.order_id, price: String(order.price),
                 size: String(order.size), field: "price" };
     renderMyOrders();
+    focusAmendBox();
   });
   amend.title = "Change the price or size (a smaller size at the same price keeps your place in line)";
   const cancel = button("✕", "icon cancel", () =>
