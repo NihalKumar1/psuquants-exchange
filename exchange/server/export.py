@@ -21,6 +21,7 @@ from exchange.engine import (
     MarketStatus,
     OrderAccepted,
     OrderCancelled,
+    OrderReduced,
     TradeExecuted,
     to_dict,
 )
@@ -97,40 +98,51 @@ def trades_table(exchange):
 
 
 def orders_table(exchange):
-    """Walk the log: each accepted order starts a row; its trades and cancel fill it in."""
+    """Walk the log: each accepted order starts a row; its trades, cancel and any amend that
+    shrank it fill it in. (An amend that moved an order cancels it, reason "amended", and the
+    new order's row says which order it replaces.)"""
     orders = {}  # order_id -> the facts so far
     for event in exchange.events:
         if isinstance(event, OrderAccepted):
-            orders[event.order_id] = {"accepted": event, "filled": 0, "cancelled": None}
+            orders[event.order_id] = {"accepted": event, "filled": 0, "cancelled": None,
+                                      "reduced_to": None}
         elif isinstance(event, TradeExecuted):
             for order_id in (event.buy_order_id, event.sell_order_id):
                 if order_id is not None:  # forced trades have no orders behind them
                     orders[order_id]["filled"] += event.size
         elif isinstance(event, OrderCancelled):
             orders[event.order_id]["cancelled"] = event
+        elif isinstance(event, OrderReduced):
+            # The order's whole size is now what had filled plus what is left resting.
+            facts = orders[event.order_id]
+            facts["reduced_to"] = facts["filled"] + event.size
 
     header = ["order_id", "time", "market_id", "market", "trader", "kind", "side", "price",
               "requested_size", "accepted_size", "filled", "status", "cancelled_at",
-              "cancel_reason"]
+              "cancel_reason", "reduced_to", "replaces"]
     rows = []
     for facts in orders.values():
-        order, cancelled = facts["accepted"], facts["cancelled"]
+        order, cancelled, reduced_to = facts["accepted"], facts["cancelled"], facts["reduced_to"]
+        size = order.size if reduced_to is None else reduced_to
         rows.append([
             order.order_id, csv_time(order.ts), order.market_id,
             title_of(exchange, order.market_id), name_of(exchange, order.trader_id),
             order.kind, order.side.value, order.price, order.requested_size, order.size,
-            facts["filled"], order_status(exchange, order, facts["filled"], cancelled),
+            facts["filled"], order_status(exchange, order, size, facts["filled"], cancelled),
             csv_time(cancelled.ts) if cancelled else "",
             cancelled.reason if cancelled else "",
+            "" if reduced_to is None else reduced_to,
+            "" if order.replaces is None else order.replaces,
         ])
     return header, rows
 
 
-def order_status(exchange, order, filled, cancelled):
-    """How the order ended: filled, cancelled, still resting, or frozen in a settled market."""
+def order_status(exchange, order, size, filled, cancelled):
+    """How the order ended: filled, cancelled, still resting, or frozen in a settled market.
+    `size` is the order's size after any amend that shrank it."""
     if cancelled is not None:
         return "cancelled"
-    if filled == order.size:
+    if filled == size:
         return "filled"
     if exchange.markets[order.market_id].status is MarketStatus.SETTLED:
         return "frozen"

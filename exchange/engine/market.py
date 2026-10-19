@@ -23,6 +23,7 @@ from .events import (
     MarketSettled,
     OrderAccepted,
     OrderCancelled,
+    OrderReduced,
     OrderRested,
     Rejected,
     SideAssigned,
@@ -106,8 +107,13 @@ class Market:
 
     # --- Decide: command -> events ---------------------------------------------------------
 
-    def decide_order(self, trader_id, kind, side, price, size, order_id, trade_id):
-        """A limit order ("limit") or a click on the best bid/offer ("take")."""
+    def decide_order(self, trader_id, kind, side, price, size, order_id, trade_id,
+                     replaces=None):
+        """A limit order ("limit") or a click on the best bid/offer ("take").
+
+        `replaces` is the resting order an amend is replacing: it is about to be cancelled, so
+        its size doesn't count against max position.
+        """
         command = f"{kind} {side.value} {size} @ {price}"
 
         def reject(reason):
@@ -125,13 +131,16 @@ class Market:
         if kind == "take" and not matches:
             return reject("nothing to take at this price or better")
 
-        accepted = min(size, self.room(trader_id, side))
+        room = self.room(trader_id, side)
+        if replaces is not None:
+            room += self.orders[replaces].remaining
+        accepted = min(size, room)
         if accepted < 1:
             return reject(f"would exceed max position of {self.config.max_position}")
 
         events = [OrderAccepted(market_id=self.market_id, order_id=order_id, trader_id=trader_id,
                                 kind=kind, side=side, price=price,
-                                requested_size=size, size=accepted)]
+                                requested_size=size, size=accepted, replaces=replaces)]
 
         # Walk the resting orders in priority order, trading at each one's price.
         # No trading with yourself: if the order would reach one of the trader's own resting
@@ -179,6 +188,38 @@ class Market:
                                    reason="cancelled by trader")]
         return [Rejected(market_id=self.market_id, trader_id=trader_id,
                          command=f"cancel {order_id}", reason=reason)]
+
+    def decide_amend(self, trader_id, order_id, price, size, new_order_id, trade_id):
+        """Change a resting order's price or size (the size is what should be left resting).
+
+        Shrinking it at the same price keeps its place in line (like cancelling part of it, so
+        it works while halted too). Any other change cancels it and places a new limit order,
+        which joins the back of the line and may trade. If that new order would be rejected,
+        the amend is rejected and the old order stays as it was.
+        """
+        command = f"amend {order_id} to {size} @ {price}"
+        order = self.orders.get(order_id)
+        if self.status is MarketStatus.SETTLED:
+            reason = "market is settled"
+        elif order is None or not self.book.contains(order):
+            reason = "no such resting order"
+        elif order.trader_id != trader_id:
+            reason = "not your order"
+        elif not is_whole_number(size) or size < 1:
+            reason = "size must be a whole number of at least 1 (use cancel to remove the order)"
+        elif price == order.price and size == order.remaining:
+            reason = "nothing to change"
+        elif price == order.price and size < order.remaining:
+            return [OrderReduced(market_id=self.market_id, order_id=order_id, size=size)]
+        else:
+            events = self.decide_order(trader_id, "limit", order.side, price, size,
+                                       new_order_id, trade_id, replaces=order_id)
+            if isinstance(events[0], Rejected):
+                reason = events[0].reason
+            else:
+                return [OrderCancelled(market_id=self.market_id, order_id=order_id,
+                                       reason="amended"), *events]
+        return self._rejected(trader_id, command, reason)
 
     def decide_cancel_all(self, trader_id, reason="cancel all"):
         """Cancel every resting order this trader has here (none once the market is settled)."""
@@ -353,6 +394,11 @@ class Market:
             if self.book.contains(order):
                 self.book.remove(order)
             order.cancelled = True
+        elif isinstance(event, OrderReduced):
+            # It stays where it is in the line; only the size left resting goes down.
+            order = self.orders[event.order_id]
+            order.size -= order.remaining - event.size
+            order.remaining = event.size
         # Trade or Tighten
         elif isinstance(event, AuctionStarted):
             self.status = MarketStatus.AUCTION

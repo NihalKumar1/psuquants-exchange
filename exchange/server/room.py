@@ -161,6 +161,9 @@ class Room:
                                         message["ask_price"], message["size"])
         if kind == "cancel":
             return exchange.cancel(message["market_id"], trader_id, message["order_id"])
+        if kind == "amend":
+            return exchange.amend(message["market_id"], trader_id, message["order_id"],
+                                  message["price"], message["size"])
         if kind == "cancel_all":
             # No market_id means cancel in every market.
             return exchange.cancel_all(trader_id, message.get("market_id"))

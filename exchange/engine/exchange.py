@@ -259,6 +259,18 @@ class Exchange:
             return self._reject(market_id, trader_id, command, "unknown market")
         return self._record(self.markets[market_id].decide_cancel(trader_id, order_id))
 
+    def amend(self, market_id, trader_id, order_id, price, size):
+        """Change a resting order's price or size. Shrinking it keeps its place in line; any
+        other change sends it to the back (see Market.decide_amend)."""
+        refusal = self._refusal(market_id, trader_id)
+        if refusal:
+            return self._reject(market_id, trader_id, f"amend {order_id} to {size} @ {price}",
+                                refusal)
+        return self._record(self.markets[market_id].decide_amend(
+            trader_id, order_id, price, size,
+            new_order_id=self.next_order_id, trade_id=self.next_trade_id,
+        ))
+
     def cancel_all(self, trader_id, market_id=None):
         """Cancel the trader's resting orders in one market, or in every market if None."""
         if trader_id in self.kicked:

@@ -36,6 +36,9 @@
       <label class="stat click-size"><small>Click size</small>
         <input id="click-size" type="number" min="1" step="1">
       </label>
+      <div class="stat keys" title="Keyboard shortcuts (when you are not typing in a box). B, S and Q work in the market you last clicked.">
+        <small>Keys</small><span><kbd>B</kbd> bid · <kbd>S</kbd> offer · <kbd>Q</kbd> quote · <kbd>Esc</kbd> cancel all</span>
+      </div>
       <button id="cancel-all-everywhere" type="button" class="ghost">Cancel all (all markets)</button>
     </div>
   </header>
@@ -74,10 +77,17 @@
       </section>
 
       <section class="panel grow">
-        <h2>Trades</h2>
+        <div class="panel-head">
+          <h2>Trades</h2>
+          <!-- Everyone's trades, or only mine (renderTape in trader.js). -->
+          <div class="toggle" id="tape-filter">
+            <button type="button" data-filter="all">All</button>
+            <button type="button" data-filter="mine">Mine</button>
+          </div>
+        </div>
         <div class="scroll">
           <table id="tape">
-            <thead><tr><th>Time</th><th>Market</th><th>Buyer</th><th>Seller</th><th class="num">Price</th><th class="num">Size</th></tr></thead>
+            <thead></thead>
             <tbody></tbody>
           </table>
         </div>

@@ -160,6 +160,8 @@ def test_trade_view_uses_names(ex, clock):
         "size": 4,
         "buyer": "Bob",
         "seller": "Alice",
+        "buyer_id": bob,  # so a trader's page can pick out its own trades (Q141)
+        "seller_id": alice,
         "aggressor_side": "buy",
         "forced": False,
     }

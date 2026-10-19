@@ -8,6 +8,7 @@
 
 const TOKEN_KEY = "psuq-token";            // lets this browser rejoin as the same trader
 const CLICK_SIZE_KEY = "psuq-click-size";  // one click size for every market
+const TAPE_FILTER_KEY = "psuq-tape-filter"; // the Trades panel shows "all" trades or only "mine"
 const ERROR_SECONDS = 3;                   // how long an error stays on screen
 const FILL_SECONDS = 2;                    // how long a fill alert stays (keep style.css's flash in step)
 
@@ -21,6 +22,9 @@ const columns = {};     // market_id -> that market's column on the page
 let notice = "";        // a message that stays until things change, e.g. "Connection lost"
 let messageTimer = null;  // takes the current error or fill alert down when its time is up
 let outlined = [];        // boxes and forms outlined in red along with the current error
+let activeMarketId = null;  // the market B, S, Q and Esc act on: the column last clicked or typed in
+let editing = null;         // the resting order being amended: {marketId, orderId, price, size, field}
+let tapeFilter = load(TAPE_FILTER_KEY) === "mine" ? "mine" : "all";
 
 // --- Connection ---------------------------------------------------------------------------
 
@@ -124,6 +128,7 @@ function renderColumns() {
     renderColumn(columns[marketId], state.markets[marketId], state.me[marketId]);
   });
   document.getElementById("no-markets").hidden = state.columns.length > 0;
+  setActiveMarket(activeMarketId);  // the active market may have just lost its column
 }
 
 function part(column, name) {
@@ -209,12 +214,8 @@ function renderBook(column, market) {
   for (let slot = 0; slot < state.book_depth; slot++) {
     const ask = market.asks[slot];
     const bid = market.bids[slot];
-    offerRows.unshift(ask
-      ? bookRow("ask", ask, biggest, slot === 0 && (() => clickTake(marketId, "buy", ask.price)))
-      : blankBookRow());
-    bidRows.push(bid
-      ? bookRow("bid", bid, biggest, slot === 0 && (() => clickTake(marketId, "sell", bid.price)))
-      : blankBookRow());
+    offerRows.unshift(ask ? bookRow(marketId, "ask", ask, biggest, slot === 0) : blankBookRow());
+    bidRows.push(bid ? bookRow(marketId, "bid", bid, biggest, slot === 0) : blankBookRow());
   }
   part(column, "book").tBodies[0].replaceChildren(...offerRows, spreadRow(market), ...bidRows);
   // The rows share the book's height equally, counting the heading row too (style.css).
@@ -228,8 +229,10 @@ function blankBookRow() {
   return row;
 }
 
-function bookRow(side, level, biggest, onClick) {
+function bookRow(marketId, side, level, biggest, isBest) {
   // Columns: Bidders | Size | Price | Size | Offerers
+  // Clicking the best bid or offer trades at it (click size). Clicking a deeper level, or
+  // shift-clicking any level, copies its price into the Bid or Offer box instead (Q139).
   const names = ordersText(level);
   const size = number(levelSize(level));
   const price = number(level.price);
@@ -245,11 +248,22 @@ function bookRow(side, level, biggest, onClick) {
   row.cells[2].className = "price";
 
   if (level.orders.some((order) => order.trader_id === me.trader_id)) row.classList.add("mine");
-  if (onClick) {
+  const formSide = side === "bid" ? "buy" : "sell";
+  if (isBest) {
     row.classList.add("clickable");
-    row.title = side === "bid" ? "Click to sell at this bid" : "Click to buy at this offer";
-    row.addEventListener("click", onClick);
+    row.title = (side === "bid" ? "Click to sell at this bid" : "Click to buy at this offer") +
+      "  ·  Shift-click to copy the price";
+  } else {
+    row.classList.add("fillable");
+    row.title = `Click to copy ${number(level.price)} into the ${side === "bid" ? "Bid" : "Offer"} box`;
   }
+  row.addEventListener("click", (event) => {
+    if (isBest && !event.shiftKey) {
+      clickTake(marketId, side === "bid" ? "sell" : "buy", level.price);
+    } else {
+      fillOrderForm(marketId, formSide, level.price);
+    }
+  });
   return row;
 }
 
@@ -320,6 +334,8 @@ function renderMyOrders() {
   // Settled markets have no column, so their (frozen, uncancellable) orders aren't listed.
   const myOrders = state.columns.flatMap((marketId) =>
     state.me[marketId].orders.map((order) => ({ marketId, order })));
+  // Stop amending an order that is no longer resting (it filled, or was cancelled).
+  if (editing && !myOrders.some(({ order }) => order.order_id === editing.orderId)) editing = null;
   const tbody = document.querySelector("#my-orders tbody");
   if (myOrders.length === 0) {
     tbody.replaceChildren(emptyRow(5, "No resting orders"));
@@ -330,16 +346,84 @@ function renderMyOrders() {
     const side = document.createElement("span");
     side.textContent = order.side === "buy" ? "Bid" : "Offer";
     side.className = order.side === "buy" ? "up" : "down";
-    const cancel = button("✕", "icon", () =>
-      send({ type: "cancel", market_id: marketId, order_id: order.order_id }));
-    cancel.title = "Cancel this order";
-    const row = tableRow([title, side, number(order.price), number(order.size), cancel]);
+    const beingEdited = editing !== null && editing.orderId === order.order_id;
+    const row = beingEdited
+      ? tableRow([title, side, amendBox("price"), amendBox("size"), amendButtons()])
+      : tableRow([title, side, number(order.price), number(order.size), orderButtons(marketId, order)]);
     row.cells[0].title = title;  // long titles are cut off; hover shows it all
     row.cells[2].className = "num";
     row.cells[3].className = "num";
     return row;
   });
   tbody.replaceChildren(...rows);
+  // Every update rebuilds the table, so put the cursor back in the box being typed in.
+  if (editing) {
+    const box = tbody.querySelector(`input[data-field="${editing.field}"]`);
+    box.focus();
+    box.setSelectionRange(box.value.length, box.value.length);
+  }
+}
+
+function orderButtons(marketId, order) {
+  // ✎ to amend the order's price or size, ✕ to cancel it.
+  const amend = button("✎", "icon", () => {
+    editing = { marketId, orderId: order.order_id, price: String(order.price),
+                size: String(order.size), field: "price" };
+    renderMyOrders();
+  });
+  amend.title = "Change the price or size (a smaller size at the same price keeps your place in line)";
+  const cancel = button("✕", "icon cancel", () =>
+    send({ type: "cancel", market_id: marketId, order_id: order.order_id }));
+  cancel.title = "Cancel this order";
+  const buttons = document.createElement("span");
+  buttons.append(amend, cancel);
+  return buttons;
+}
+
+function amendBox(field) {
+  // A box for the new price or size. What is typed is kept in `editing`, so it survives the
+  // table being rebuilt. Enter sends the amend; Esc stops amending.
+  const box = document.createElement("input");
+  box.inputMode = "numeric";
+  box.dataset.field = field;
+  box.value = editing[field];
+  box.addEventListener("input", () => { editing[field] = box.value; });
+  box.addEventListener("focus", () => { editing.field = field; });
+  box.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") sendAmend();
+    if (event.key === "Escape") {
+      event.stopPropagation();  // just stop amending; don't also cancel all (Q142)
+      stopAmending();
+    }
+  });
+  return box;
+}
+
+function amendButtons() {
+  const save = button("✓", "icon", sendAmend);
+  save.title = "Save (Enter)";
+  const stop = button("↩", "icon", stopAmending);
+  stop.title = "Keep the order as it was (Esc)";
+  const buttons = document.createElement("span");
+  buttons.append(save, stop);
+  return buttons;
+}
+
+function sendAmend() {
+  const price = editing.price.trim();
+  const size = editing.size.trim();
+  if (price === "" || size === "") {
+    showError(price === "" ? "Enter a price." : "Enter a size.");
+    return;
+  }
+  send({ type: "amend", market_id: editing.marketId, order_id: editing.orderId,
+         price: Number(price), size: Number(size) });
+  stopAmending();
+}
+
+function stopAmending() {
+  editing = null;
+  renderMyOrders();
 }
 
 function renderPositions() {
@@ -378,18 +462,48 @@ function headerCell(text, className = "") {
 }
 
 function renderTape() {
+  // Every trade, newest first; or with "Mine" on, only my own trades, each saying whether I
+  // bought ("Buy") or sold ("Sell") and who with (Q141).
+  const mine = tapeFilter === "mine";
+  document.querySelectorAll("#tape-filter button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.filter === tapeFilter));
+  const headings = mine
+    ? ["Time", "Market", "Side", "Price", "Size", "With"]
+    : ["Time", "Market", "Buyer", "Seller", "Price", "Size"];
+  const header = document.createElement("tr");
+  header.append(...headings.map((text) =>
+    headerCell(text, text === "Price" || text === "Size" ? "num" : "")));
+  document.querySelector("#tape thead").replaceChildren(header);
+  document.getElementById("tape").classList.toggle("mine", mine);  // its own column widths
+
   const tbody = document.querySelector("#tape tbody");
-  if (tape.length === 0) {
-    tbody.replaceChildren(emptyRow(6, "No trades yet"));
+  const trades = mine
+    ? tape.filter((trade) => trade.buyer_id === me.trader_id || trade.seller_id === me.trader_id)
+    : tape;
+  if (trades.length === 0) {
+    tbody.replaceChildren(emptyRow(6, mine ? "You have no trades yet" : "No trades yet"));
     return;
   }
-  const rows = [...tape].reverse().map((trade) => {
+  const rows = [...trades].reverse().map((trade) => {
     const title = state.markets[trade.market_id].title;
-    const row = tableRow([clockTime(trade.time), title, trade.buyer, trade.seller,
-      number(trade.price), number(trade.size)]);
+    let row;
+    if (mine) {
+      const bought = trade.buyer_id === me.trader_id;
+      const side = document.createElement("span");
+      side.textContent = bought ? "Buy" : "Sell";
+      side.className = bought ? "up" : "down";
+      row = tableRow([clockTime(trade.time), title, side, number(trade.price),
+        number(trade.size), bought ? trade.seller : trade.buyer]);
+      row.cells[3].className = "num";
+      row.cells[4].className = "num";
+      row.cells[5].title = row.cells[5].textContent;  // long names are cut off; hover shows it all
+    } else {
+      row = tableRow([clockTime(trade.time), title, trade.buyer, trade.seller,
+        number(trade.price), number(trade.size)]);
+      row.cells[4].className = "num";
+      row.cells[5].className = "num";
+    }
     row.cells[1].title = title;
-    row.cells[4].className = "num";
-    row.cells[5].className = "num";
     if (freshTradeIds.has(trade.trade_id)) row.classList.add("fresh");
     if (trade.forced) {
       row.classList.add("forced");
@@ -522,6 +636,17 @@ function clickTake(marketId, side, price) {
   send({ type: "take", market_id: marketId, side, price, size: clickSize() });
 }
 
+function fillOrderForm(marketId, side, price) {
+  // Copy a price from the book into the Bid (buy) or Offer (sell) box, then put the cursor in
+  // the size box, so the trader types a size and presses Enter.
+  const column = columns[marketId];
+  if (!column || part(column, "entry-panel").hidden) return;
+  part(column, `${side}-price`).value = price;
+  const size = part(column, `${side}-size`);
+  size.focus();
+  size.select();
+}
+
 function buildColumn(marketId) {
   // A new column for one market, copied from the <template> in trader.html. Its buttons and
   // forms send commands for this market only.
@@ -575,8 +700,56 @@ function buildColumn(marketId) {
 
   part(column, "cancel-all-market").addEventListener("click", () =>
     send({ type: "cancel_all", market_id: marketId }));
+
+  // The keyboard shortcuts act on the market last clicked or typed in.
+  for (const type of ["pointerdown", "focusin"]) {
+    column.addEventListener(type, () => setActiveMarket(marketId));
+  }
   return column;
 }
+
+// --- Keyboard shortcuts (Q142) ------------------------------------------------------------
+// When the cursor is not in a box: B, S and Q put it in the active market's Bid price, Offer
+// price or Quote bid box, and Esc cancels all my orders in the active market. In a box, Esc
+// just leaves the box. Enter sends whichever form the cursor is in (the browser does that).
+
+function activeMarket() {
+  // The active market's id, or the first column's if it has no column any more.
+  if (state && state.columns.includes(activeMarketId)) return activeMarketId;
+  return state && state.columns.length > 0 ? state.columns[0] : null;
+}
+
+function setActiveMarket(marketId) {
+  activeMarketId = marketId;
+  for (const [id, column] of Object.entries(columns)) {
+    column.classList.toggle("active", id === activeMarket());
+  }
+}
+
+const SHORTCUT_BOXES = { b: "buy-price", s: "sell-price", q: "quote-bid" };
+
+document.addEventListener("keydown", (event) => {
+  if (document.getElementById("trade-screen").hidden) return;
+  if (event.ctrlKey || event.metaKey || event.altKey) return;  // leave browser shortcuts alone
+  if (event.target.matches("input, select, textarea")) {
+    if (event.key === "Escape") event.target.blur();
+    return;
+  }
+  const marketId = activeMarket();
+  const column = marketId && columns[marketId];
+  if (!column) return;
+  if (event.key === "Escape") {
+    send({ type: "cancel_all", market_id: marketId });
+    return;
+  }
+  const boxName = SHORTCUT_BOXES[event.key.toLowerCase()];
+  if (boxName && !part(column, "entry-panel").hidden) {
+    event.preventDefault();  // so the letter isn't typed into the box
+    const box = part(column, boxName);
+    box.focus();
+    box.select();
+  }
+});
 
 document.getElementById("join-form").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -591,6 +764,13 @@ document.getElementById("join-form").addEventListener("submit", (event) => {
 
 document.getElementById("cancel-all-everywhere").addEventListener("click", () =>
   send({ type: "cancel_all" }));
+
+document.querySelectorAll("#tape-filter button").forEach((b) =>
+  b.addEventListener("click", () => {
+    tapeFilter = b.dataset.filter;
+    save(TAPE_FILTER_KEY, tapeFilter);
+    if (state) renderTape();
+  }));
 
 const clickSizeBox = document.getElementById("click-size");
 clickSizeBox.value = load(CLICK_SIZE_KEY) || 1;

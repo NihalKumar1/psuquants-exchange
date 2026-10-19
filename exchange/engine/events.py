@@ -200,6 +200,7 @@ class OrderAccepted(Event):
     price: int
     requested_size: int
     size: int  # smaller than requested_size if clipped by max position
+    replaces: int | None = None  # the order this one replaced, when made by an amend
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -226,6 +227,14 @@ class OrderRested(Event):
 class OrderCancelled(Event):
     order_id: int
     reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class OrderReduced(Event):
+    """An amend that only shrank a resting order: it keeps its place in line."""
+
+    order_id: int
+    size: int  # what is left resting now
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -268,6 +277,7 @@ EVENT_TYPES = {
         TradeExecuted,
         OrderRested,
         OrderCancelled,
+        OrderReduced,
         Rejected,
     )
 }

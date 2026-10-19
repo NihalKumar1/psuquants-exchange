@@ -19,6 +19,7 @@ from .events import (
     MarketSettled,
     OrderAccepted,
     OrderCancelled,
+    OrderReduced,
     OrderRested,
     Rejected,
     SideAssigned,

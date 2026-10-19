@@ -126,6 +126,10 @@ def trade_view(exchange, trade):
         "size": trade.size,
         "buyer": name_of(exchange, trade.buyer_id),
         "seller": name_of(exchange, trade.seller_id),
+        # Ids too (they are already public in the book), so a page can pick out its own trades
+        # even after a rename.
+        "buyer_id": trade.buyer_id,
+        "seller_id": trade.seller_id,
         "aggressor_side": trade.aggressor_side.value,
         "forced": trade.forced,
     }

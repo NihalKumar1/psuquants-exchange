@@ -42,6 +42,7 @@ The games are "Trade or Tighten" estimation markets. Examples are "Number of car
   - **Two-sided quote** ("35 at 38, 100 up") posts a bid and an offer in one action.
   - **Hit / lift** is an immediate order that takes resting liquidity ("lift the 37 offer, 10"). In the UI this is **click-to-take**: the trader clicks the best bid or best offer (see Q2).
   - **Cancel** one order, and **cancel all** (one action for this market and one for all markets).
+  - **Amend** a resting order's price or size (Q133–Q138).
 - **Names are visible**: book levels show who owns each order, and the trade tape shows buyer and seller names, like open outcry.
 - Every order is validated against tick size and max position.
 - Trades print at the **resting order's price**.
@@ -114,6 +115,7 @@ The admin picks a trader and a market. The screen shows:
    - **ANSWERED:** No per-order size cap and no rate limits.
 15. Keyboard shortcuts for fast order entry?
    - **PARTLY ANSWERED:** Not in milestone 2. Still open for later.
+   - **ANSWERED (2026-10-18):** Yes; see Q142–Q143.
 
 ### Answered during milestone 1 planning (2026-09-27)
 16. Max-position basis: **worst case**. Buy room = max − (position + own resting bids). Sell room = max − (−position + own resting offers). Orders are clipped to the room.
@@ -282,6 +284,20 @@ One wild trade stretched the chart's price axis and squashed every other price i
 130. The **settlement line is always in view**: the range stretches to include it.
 131. The boxes are **remembered per market** in this browser, so they survive a reload. A Reset's new markets start blank (even though market ids like `m1` are reused).
 132. If Min ≥ Max, the boxes are outlined in red and the chart fits everything.
+
+### Answered while adding standard trading-platform features (2026-10-18)
+The exec asked for the features most trading platforms have. They picked amend, click the book to fill the order form, a "my trades" list and keyboard shortcuts, and the real-exchange priority rule for amends. The details marked *(proposed)* were chosen while building and are waiting for the instructor's review.
+133. A trader can **amend** a resting order's price and size from the Resting orders list (✎, then Enter to send or Esc to stop). The size is **what should be left resting** (the size the list shows).
+134. **Priority (real-exchange rule):** a **smaller size at the same price keeps the order's place in line**. A **new price or a bigger size** cancels the order and places a new limit order, which joins the **back of the line** (and trades if it crosses the book).
+135. *(proposed)* An amend that sends the order to the back is checked **like a new limit order** (tick size, max position with Q3's clipping, no trading with yourself). The old order's size doesn't count against max position. If the new order would be rejected, **the amend is rejected and the old order stays as it was**.
+136. *(proposed)* Shrinking works **while halted** (it only lowers risk, like cancelling). A new price or a bigger size is rejected while halted ("market is not open"). Settled markets' orders can't be amended (Q27).
+137. *(proposed)* Amending to size 0 is rejected ("use cancel"); amending to the same price and size is rejected ("nothing to change").
+138. *(proposed)* In the log: a shrink is an `OrderReduced` event; a move is `OrderCancelled` (reason "amended") followed by the new order, whose `OrderAccepted` says which order it `replaces`. orders.csv gains `reduced_to` and `replaces` columns.
+139. **Click the book to fill the order form:** clicking a **deeper level** copies its price into the **Bid box** (for a bid level) or the **Offer box** (for an offer level) and puts the cursor in that size box. The best bid and offer still **trade** when clicked (Q2); *(proposed)* **shift-click** copies their price instead.
+140. *(proposed)* While a market is in Trade or Tighten (no order entry), clicking the book does nothing.
+141. **My trades:** the Trades panel has an **All / Mine** switch. Mine lists only the trader's own trades (forced trades included): time, market, **Buy/Sell**, price, size and **who with**. *(proposed)* The browser remembers the choice. Updates carry each trade's `buyer_id` and `seller_id` (already public in the book) so the page can pick out its own trades even after a rename.
+142. **Keyboard shortcuts** *(proposed keys)*, only when the cursor is not in a box: **B** → the Bid price box, **S** → the Offer price box, **Q** → the Quote's bid box, **Esc** → cancel all of my orders in that market. In a box, **Esc** just leaves the box (so Esc twice cancels all). **Enter** sends the form the cursor is in. A hint is in the top bar.
+143. *(proposed)* With several markets, shortcuts act on the **market last clicked or typed in** (the first column until then); its title turns blue.
 
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.

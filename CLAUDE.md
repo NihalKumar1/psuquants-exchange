@@ -59,6 +59,9 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   (a `PricePoint` whenever the mark or last price changes) for the review chart, and
   `engine/review.py` turns a market into one trader's fills with running position, realized,
   MTM (at the mark right after each fill) and edge vs settlement.
+  Amending an order (`Exchange.amend`, SPEC Q133–Q138): a shrink at the same price is an
+  `OrderReduced` event (keeps its place); anything else is `OrderCancelled` ("amended") plus a new
+  order through `decide_order(..., replaces=old_id)`.
 - `exchange/server/room.py`: room code, join/rejoin tokens, live trader and admin connections,
   trader + admin commands, and `reset()` (new empty game, same code; connected traders are
   carried over with **new ids and tokens**, so the socket loop looks up `trader_of(connection)`
@@ -69,6 +72,7 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   Each update also carries `my_fills`: the trader's own fill alerts, with the text already
   written ("You bought 5 of Cars at 36, now LONG 5") and a colour (buy/sell/even). The page
   shows it in the banner and flashes the market's column and Position tile (SPEC Q110–Q118).
+  Trades carry `buyer_id`/`seller_id` so the page's Trades "Mine" switch can find its own (Q141).
 - `exchange/server/app.py`: FastAPI + WebSocket wiring (`create_app(room, admin_secret)`, used by
   tests). Traders on `/ws`, admin on `/admin/ws`. Also runs the forced-trade timer (an asyncio
   task that ends the window when time is up; Reset cancels running timers). A trader command

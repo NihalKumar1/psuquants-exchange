@@ -161,6 +161,18 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
 }
 .stat b { font: 600 15px var(--mono); }
 .click-size input { width: 72px; padding: 4px 8px; }
+/* The keyboard shortcuts hint in the top bar (Q142). */
+.keys span { color: var(--muted); font-size: 12px; white-space: nowrap; }
+kbd {
+  font: 600 11px var(--mono);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+/* With several markets, the one B, S, Q and Esc act on has its title in blue. */
+.market-area #markets > .market.active:not(:only-child) .market-head h1 { color: var(--accent); }
 
 #message {
   margin: 0;
@@ -254,18 +266,16 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
 .column { display: flex; flex-direction: column; gap: 14px; min-width: 0; border-radius: var(--radius); }
 
 .market-area { display: flex; flex-direction: column; min-height: 0; }
-/* One column per running market, all in one row: more markets means narrower columns. */
-#markets {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
+/* One column per running market, all in one row: more markets means narrower columns.
+   (Scoped to .market-area because the admin page has a different #markets: a table.) */
 .market-area #markets {
   flex: 1;
   min-height: 0;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
+  gap: 14px;
   align-items: stretch;  /* every column is the full height */
 }
 .waiting { margin: 0; color: var(--muted); text-align: center; padding: 28px 16px; }
@@ -326,6 +336,25 @@ a.button.ghost:hover { color: var(--text); border-color: var(--muted); }
   color: var(--muted);
   margin-bottom: 12px;
 }
+/* A panel heading with something on its right, e.g. the Trades panel's All / Mine. */
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.toggle { display: flex; }
+.toggle button {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  padding: 2px 10px;
+  font: 500 11px system-ui, sans-serif;
+}
+.toggle button:first-child { border-radius: 6px 0 0 6px; }
+.toggle button:last-child { border-radius: 0 6px 6px 0; border-left: none; }
+.toggle button.on { background: var(--accent-soft); color: var(--text); border-color: var(--accent); }
+/* Amending a resting order: its price and size become boxes (Q133). */
+#my-orders input { width: 100%; padding: 2px 6px; text-align: right; font-size: 13px; }
+#my-orders td:last-child { white-space: nowrap; overflow: visible; }
+#my-orders button.icon:hover { color: var(--text); }
+#my-orders button.icon.cancel:hover { color: var(--ask); }
 .panel h3 { font-size: 12px; color: var(--muted); font-weight: 500; margin: 14px 0 8px; }
 /* Tighter panels on the trading screen, so everything fits. */
 #trade-screen .panel { padding: 10px 12px; }
@@ -452,7 +481,7 @@ tbody tr:last-child td { border-bottom: none; }
 #my-orders th:nth-child(2) { width: 56px; }  /* side */
 #my-orders th:nth-child(3) { width: 84px; }  /* price */
 #my-orders th:nth-child(4) { width: 52px; }  /* size */
-#my-orders th:nth-child(5) { width: 48px; }  /* cancel */
+#my-orders th:nth-child(5) { width: 64px; }  /* amend and cancel */
 #my-orders td:first-child { color: var(--muted); }
 #my-orders td:last-child { text-align: right; }
 
@@ -474,6 +503,12 @@ tbody tr:last-child td { border-bottom: none; }
 #tape th:nth-child(2) { width: 22%; }   /* market */
 #tape th:nth-child(5) { width: 72px; }  /* price */
 #tape th:nth-child(6) { width: 44px; }  /* size */
+/* "Mine": Time | Market | Side | Price | Size | With */
+#tape.mine th:nth-child(2) { width: 15%; }   /* market (narrower, to make room for "With") */
+#tape.mine th:nth-child(3) { width: 44px; }  /* side */
+#tape.mine th:nth-child(4) { width: 72px; }  /* price */
+#tape.mine th:nth-child(5) { width: 44px; }  /* size */
+#tape.mine th:nth-child(6) { width: auto; }  /* with */
 #tape td:nth-child(2) { color: var(--muted); }
 #tape td:first-child { color: var(--muted); font-family: var(--mono); font-size: 12px; }
 #tape tr.fresh td { animation: flash 1.6s ease-out; }
@@ -546,6 +581,10 @@ tbody tr:last-child td { border-bottom: none; }
 .book tr.clickable:hover td { background-color: transparent; }
 .book tr.clickable.bid:hover { outline: 1px solid var(--bid); outline-offset: -1px; }
 .book tr.clickable.ask:hover { outline: 1px solid var(--ask); outline-offset: -1px; }
+/* Deeper levels: clicking one copies its price into the Bid or Offer box (Q139). */
+.book tr.fillable { cursor: pointer; }
+.book tr.fillable:hover { outline: 1px dashed var(--muted); outline-offset: -1px; }
+.book { user-select: none; }  /* so a shift-click doesn't select text */
 
 /* My own orders get a blue edge. */
 .book tr.mine td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
@@ -580,6 +619,7 @@ tbody tr:last-child td { border-bottom: none; }
   .book-panel { container-type: inline-size; }
   .book { --row: 30px; }
   .sidebar .orders-panel { max-height: none; }
+  .sidebar .grow { flex: none; }  /* no window height to share, so each list is its own height */
   .sidebar .scroll { max-height: 420px; }
 }
 
