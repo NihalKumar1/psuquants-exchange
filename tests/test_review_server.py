@@ -106,6 +106,30 @@ def test_after_logging_in_the_review_page_gets_the_pickers_and_no_review(client,
     assert state["review"] is None
 
 
+def test_the_review_page_gets_the_leaderboard_even_with_nothing_picked(client, room):
+    # SPEC Q153-Q156: the Leaderboard switch needs no pick.
+    ex = room.exchange
+    alice, bob = (ex.join(name)[0].trader_id for name in ("Alice", "Bob"))
+    ex.place_limit("cars", bob, Side.SELL, 40, 4)
+    ex.take("cars", alice, Side.BUY, 40, 4)
+    ex.place_limit("cars", bob, Side.BUY, 45, 4)
+    ex.take("cars", alice, Side.SELL, 45, 4)   # Alice +20, Bob -20
+
+    with client.websocket_connect("/review/ws") as ws:
+        state = review_login(ws)
+
+    assert [(row["rank"], row["name"], row["equity"])
+            for row in state["leaderboard"]["rows"]] == [(1, "Alice", 100_020), (2, "Bob", 99_980)]
+
+
+def test_the_review_page_has_the_leaderboard_switch(client):
+    page = client.get("/review").text
+    script = client.get("/static/review.js").text
+
+    assert 'id="view-switch"' in page and 'id="leaderboard"' in page
+    assert "renderLeaderboard" in script
+
+
 # --- Picking and live updates ---------------------------------------------------------------
 
 

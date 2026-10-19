@@ -730,6 +730,17 @@ select:focus { outline: none; border-color: var(--accent); }
 #fills tr.drop td { color: #eab308; background: rgba(234, 179, 8, 0.08); white-space: normal; }
 #fills tr.total td { font-weight: 700; border-top: 1px solid var(--line); }
 
+/* The Review | Leaderboard switch (SPEC Q156): <body> gets the class "leaderboard-view" when
+   the leaderboard is on, which hides the review's pickers, chart and trades. The pickers keep
+   their space, so the top bar (and the switch) don't move. */
+.view-switch button { padding: 5px 14px; font-size: 13px; }
+.leaderboard-view main.review-only { display: none; }
+.leaderboard-view .topbar .review-only { visibility: hidden; }
+body:not(.leaderboard-view) .leaderboard-only { display: none; }
+#leaderboard td { font-size: 18px; padding: 8px 12px; }
+#leaderboard th { font-size: 12px; padding: 0 12px 8px; }
+#leaderboard tr.kicked td { color: var(--muted); }
+
 @media (max-width: 600px) {
   .review { padding-left: 16px; padding-right: 16px; }
   select { min-width: 0; }

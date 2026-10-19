@@ -84,13 +84,16 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   carries the command's `market_id`, `kind` and `side`, so the trader page can outline the form
   that sent it.
   The review page is on `/review/ws` (admin password, then `review_pick`); its live pushes are
-  throttled to one per `review_interval` (1 s). `GET /admin/export` (password in the
+  throttled to one per `review_interval` (1 s). Every `review_state` also carries the
+  `leaderboard` (`views.leaderboard_view`: everyone ranked by equity, ties share a rank, SPEC
+  Q153–Q158); it goes only to the review page, never to traders (Q10). `GET /admin/export` (password in the
   `X-Admin-Secret` header) downloads the zip; the room remembers the export so Reset can warn.
 - `exchange/server/export.py`: the export zip (trades/orders/events CSVs + events.json), with US
   Eastern times and names in place of trader ids. Needs `tzdata` on Windows.
 - `exchange/server/main.py`: the app uvicorn runs (`build_app(environ)` reads `ADMIN_SECRET`).
 - `exchange/server/static/`: trader page, admin page, review page (`review.js` draws the chart as
-  plain SVG; its price axis has instructor Min/Max boxes, remembered per market in localStorage),
+  plain SVG; its price axis has instructor Min/Max boxes, remembered per market in localStorage;
+  a Review | Leaderboard switch in its top bar swaps the chart and trades for the leaderboard),
   and `common.js` helpers (plain HTML/JS/CSS, no build step).
 - `scripts/load_test.py`: the 60-bot load test (also imported by `tests/test_load_test.py`).
   `scripts/demo_fill.py` (gitignored) fills a book for screenshots.

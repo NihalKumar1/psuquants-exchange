@@ -392,7 +392,43 @@ def review_state_message(room, pick):
         market_id, trader_id = pick
         if market_id in exchange.markets and trader_id in exchange.traders:
             review = review_message(exchange, market_id, trader_id)
-    return {"type": "review_state", "options": review_options(exchange), "review": review}
+    return {"type": "review_state", "options": review_options(exchange), "review": review,
+            "leaderboard": leaderboard_view(exchange)}
+
+
+def leaderboard_view(exchange):
+    """Every trader ranked by equity, highest first (SPEC Q153-Q158), for the projector only:
+    it has everyone's PnL, so it never goes to a trader's browser (Q10).
+
+    Each row has the equity and total PnL in dollars, and each started market's PnL in that
+    market's points. Ties share a rank (1, 2, 2, 4) and are listed in name order. Removed
+    traders are ranked too, marked "kicked".
+    """
+    market_ids = started_market_ids(exchange)
+    rows = [
+        {
+            "trader_id": trader_id,
+            "name": name,
+            "kicked": trader_id in exchange.kicked,
+            "equity": cents(exchange.equity(trader_id)),
+            "total_pnl": cents(exchange.total_pnl(trader_id).total),
+            "markets": {market_id: exchange.markets[market_id].pnl(trader_id).total
+                        for market_id in market_ids},
+        }
+        for trader_id, name in exchange.traders.items()
+    ]
+    rows.sort(key=lambda row: (-row["equity"], row["name"].casefold()))
+    for row in rows:
+        # Rank = 1 + how many have more equity, so equal equity (to the cent) shares a rank.
+        row["rank"] = 1 + sum(other["equity"] > row["equity"] for other in rows)
+    return {
+        "markets": [
+            {"market_id": market_id, "title": exchange.markets[market_id].config.title,
+             "dollars_per_point": exchange.markets[market_id].config.dollars_per_point}
+            for market_id in market_ids
+        ],
+        "rows": rows,
+    }
 
 
 def review_options(exchange):
