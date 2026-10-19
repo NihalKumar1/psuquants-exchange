@@ -6,6 +6,7 @@
 const SECRET_KEY = "psuq-admin-secret";  // the same remembered password as the admin page
 const PICK_KEY = "psuq-review-pick";     // the last market and trader picked, as JSON
 const RANGE_KEY = "psuq-review-range";   // each market's typed price axis Min/Max, as JSON
+const VIEW_KEY = "psuq-review-view";     // "review" or "leaderboard": which one is on screen
 
 let socket = null;
 let secret = null;
@@ -14,6 +15,7 @@ let state = null;    // the latest "review_state": {options, review}
 let pick = loadPick();  // {market_id, trader_id}; either may be ""
 let ranges = loadRanges();  // {rangeKey: {min, max}}: the text typed in the Min and Max boxes
 let rangeShown = null;      // the rangeKey whose Min and Max are in the boxes now
+let view = load(VIEW_KEY) === "leaderboard" ? "leaderboard" : "review";
 
 // --- Connection ---------------------------------------------------------------------------
 
@@ -94,6 +96,7 @@ function showMessage(text) {
 // --- Drawing the screen -------------------------------------------------------------------
 
 function render() {
+  renderLeaderboard(state.leaderboard);
   const review = state.review;
   // The pickers always show whose review is on screen.
   if (review) pick = { market_id: review.market_id, trader_id: review.trader_id };
@@ -212,6 +215,55 @@ function totalRow(totalEdge, columns) {
   row.append(label, value);
   return row;
 }
+
+// --- The leaderboard (SPEC Q153–Q158) -----------------------------------------------------
+// Everyone ranked by equity, live. Equity and total PnL are in dollars; each market's column
+// is that market's PnL in its own points. Removed traders are ranked too, greyed out.
+
+function showView(name) {
+  // Review (one trader in one market) or Leaderboard; the switch's buttons show which is on.
+  view = name;
+  save(VIEW_KEY, view);
+  document.body.classList.toggle("leaderboard-view", view === "leaderboard");
+  document.querySelectorAll("#view-switch button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.view === view));
+  if (state) render();  // the chart takes its width from the screen, so draw it once visible
+}
+
+function renderLeaderboard(board) {
+  const headings = [["#", "num"], ["Trader", ""], ["Equity", "num"], ["Total PnL ($)", "num"],
+    ...board.markets.map((market) => [`${market.title} (pts)`, "num"])];
+  const head = document.createElement("tr");
+  for (const [text, className] of headings) {
+    const th = document.createElement("th");
+    th.textContent = text;
+    th.className = className;
+    head.append(th);
+  }
+  // Hovering a market's heading shows its $ per point.
+  board.markets.forEach((market, i) => { head.cells[4 + i].title = perPoint(market.dollars_per_point); });
+  document.querySelector("#leaderboard thead").replaceChildren(head);
+
+  const tbody = document.querySelector("#leaderboard tbody");
+  if (board.rows.length === 0) {
+    tbody.replaceChildren(emptyRow(headings.length, "Nobody has joined yet."));
+    return;
+  }
+  tbody.replaceChildren(...board.rows.map((trader) => {
+    const row = tableRow([
+      number(trader.rank), trader.kicked ? `${trader.name} (removed)` : trader.name,
+      money(trader.equity), signedMoney(trader.total_pnl),
+      ...board.markets.map((market) => signed(trader.markets[market.market_id])),
+    ]);
+    for (let i = 0; i < row.cells.length; i++) if (i !== 1) row.cells[i].className = "num";
+    if (trader.kicked) row.classList.add("kicked");
+    return row;
+  }));
+}
+
+document.querySelectorAll("#view-switch button").forEach((b) =>
+  b.addEventListener("click", () => showView(b.dataset.view)));
+showView(view);
 
 // --- The price chart (plain SVG) ----------------------------------------------------------
 // Time runs left to right from the open to settlement (or now). The mark and the last price

@@ -14,7 +14,7 @@ Nothing here knows about WebSockets: a "connection" is whatever object the calle
 
 import secrets
 
-from exchange.engine import Exchange, MarketConfig, Side, TraderJoined
+from exchange.engine import Exchange, MarketConfig, Side, StartingEquitySet, TraderJoined
 
 
 def new_room_code():
@@ -39,9 +39,10 @@ class Room:
         self.exported_seq = len(self.exchange.events)
 
     def has_unexported_changes(self):
-        """True if something happened since the last export. People joining doesn't count:
-        a game where nothing else happened has nothing worth keeping."""
-        return any(not isinstance(event, TraderJoined)
+        """True if something happened since the last export. People joining and the starting
+        equity being set (Reset logs it in the new game) don't count: a game where nothing else
+        happened has nothing worth keeping."""
+        return any(not isinstance(event, (TraderJoined, StartingEquitySet))
                    for event in self.exchange.events[self.exported_seq:])
 
     # --- Joining --------------------------------------------------------------------------
@@ -124,6 +125,9 @@ class Room:
         old = self.exchange
         old_connections = self.connections
         self.exchange = Exchange(clock=old.clock, rng=old.rng)
+        # The starting equity is a setting for the room, so the new game keeps it.
+        if old.starting_equity != self.exchange.starting_equity:
+            self.exchange.set_starting_equity(old.starting_equity)
         self.connections = {}
         self.tokens = {}
         self.exported_seq = 0
@@ -161,6 +165,9 @@ class Room:
                                         message["ask_price"], message["size"])
         if kind == "cancel":
             return exchange.cancel(message["market_id"], trader_id, message["order_id"])
+        if kind == "amend":
+            return exchange.amend(message["market_id"], trader_id, message["order_id"],
+                                  message["price"], message["size"])
         if kind == "cancel_all":
             # No market_id means cancel in every market.
             return exchange.cancel_all(trader_id, message.get("market_id"))
@@ -182,6 +189,8 @@ class Room:
         """
         exchange = self.exchange
         kind = message["type"]
+        if kind == "set_starting_equity":
+            return exchange.set_starting_equity(message["amount"])
         if kind == "create_market":
             market_id = f"m{len(exchange.markets) + 1}"  # markets are never deleted
             return exchange.create_market(market_config(market_id, message))
@@ -217,7 +226,8 @@ class Room:
 
 
 def market_config(market_id, message):
-    """The five market settings from an admin message."""
+    """The market settings from an admin message. Scripts written before contract
+    multipliers existed (e.g. the load test) don't send dollars_per_point; it is then 1."""
     return MarketConfig(
         market_id=market_id,
         title=message["title"],
@@ -225,4 +235,5 @@ def market_config(market_id, message):
         max_position=message["max_position"],
         forced_trade_size=message["forced_trade_size"],
         forced_trade_seconds=message["forced_trade_seconds"],
+        dollars_per_point=message.get("dollars_per_point", 1),
     )

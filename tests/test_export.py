@@ -95,7 +95,7 @@ def test_orders_csv_shows_how_each_order_ended(ex, clock):
         "market": "Test market cars", "trader": "Bob", "kind": "limit", "side": "sell",
         "price": "40", "requested_size": "10", "accepted_size": "10", "filled": "4",
         "status": "cancelled", "cancelled_at": "2026-09-27 05:32:00.000",
-        "cancel_reason": "cancelled by trader",
+        "cancel_reason": "cancelled by trader", "reduced_to": "", "replaces": "",
     }
     assert (rows["2"]["status"], rows["2"]["filled"], rows["2"]["cancelled_at"]) == ("resting", "0", "")
     assert (rows["3"]["kind"], rows["3"]["status"], rows["3"]["filled"]) == ("take", "filled", "4")
@@ -125,6 +125,32 @@ def test_a_clipped_order_shows_requested_and_accepted_size(clock):
     assert (row["requested_size"], row["accepted_size"]) == ("8", "5")
 
 
+def test_amended_orders_in_orders_csv(ex):
+    (alice,) = join_all(ex, "Alice")
+    ex.place_limit("cars", alice, BUY, 30, 10)    # 1: shrunk to 4, keeps its place
+    ex.amend("cars", alice, 1, 30, 4)
+    ex.place_limit("cars", alice, BUY, 31, 5)     # 2: moved to 32, which is order 3
+    ex.amend("cars", alice, 2, 32, 5)
+
+    rows = {row["order_id"]: row for row in csv_rows(unzip(ex)["orders.csv"])}
+
+    assert (rows["1"]["accepted_size"], rows["1"]["reduced_to"], rows["1"]["status"]) == (
+        "10", "4", "resting")
+    assert (rows["2"]["status"], rows["2"]["cancel_reason"]) == ("cancelled", "amended")
+    assert (rows["3"]["price"], rows["3"]["replaces"], rows["3"]["status"]) == ("32", "2", "resting")
+
+
+def test_a_shrunk_order_that_fills_is_filled(ex):
+    alice, bob = join_all(ex, "Alice", "Bob")
+    ex.place_limit("cars", alice, BUY, 30, 10)
+    ex.amend("cars", alice, 1, 30, 4)
+    ex.take("cars", bob, SELL, 30, 4)
+
+    row = csv_rows(unzip(ex)["orders.csv"])[0]
+
+    assert (row["filled"], row["status"]) == ("4", "filled")
+
+
 # --- events.csv and events.json -------------------------------------------------------------
 
 
@@ -143,7 +169,7 @@ def test_events_csv_lists_every_event_with_names_in_place_of_ids(ex):
         "seq": "1", "time": "2026-09-27 05:30:00.000", "type": "MarketCreated",
         "market_id": "cars", "market": "Test market cars", "trader": "",
         "details": "title=Test market cars; tick_size=1; max_position=1000; "
-                   "forced_trade_size=10; forced_trade_seconds=30",
+                   "forced_trade_size=10; forced_trade_seconds=30; dollars_per_point=1",
     }
     trade = next(row for row in rows if row["type"] == "TradeExecuted")
     assert "buyer_id=Alice; seller_id=Bob" in trade["details"]

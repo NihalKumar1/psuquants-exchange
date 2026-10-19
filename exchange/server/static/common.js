@@ -60,6 +60,29 @@ function signed(value) {
   return span;
 }
 
+function money(value) {
+  // Dollars: "$100,000", "$12.50", "-$3.20". Cents only when there are some.
+  if (value === null || value === undefined) return "—";
+  const cents = Math.round(Math.abs(value) * 100) % 100 !== 0;
+  const text = Math.abs(value).toLocaleString(undefined, {
+    minimumFractionDigits: cents ? 2 : 0, maximumFractionDigits: 2,
+  });
+  return (value < 0 ? "-$" : "$") + text;
+}
+
+function signedMoney(value) {
+  // Dollars coloured like signed(): green and "+" when positive, red when negative.
+  const span = document.createElement("span");
+  span.textContent = (value > 0 ? "+" : "") + money(value);
+  span.className = value > 0 ? "up" : value < 0 ? "down" : "";
+  return span;
+}
+
+function perPoint(dollarsPerPoint) {
+  // A market's contract multiplier, e.g. "$0.01/pt" or "$50/pt".
+  return `${money(dollarsPerPoint)}/pt`;
+}
+
 function statusText(status) {
   // "mm_quoting" -> "MM QUOTING"
   return status.replaceAll("_", " ").toUpperCase();

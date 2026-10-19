@@ -63,6 +63,7 @@ def market_view(exchange, market_id, depth=BOOK_DEPTH):
         "title": market.config.title,
         "tick_size": market.config.tick_size,
         "max_position": market.config.max_position,
+        "dollars_per_point": market.config.dollars_per_point,
         "status": market.status.value,
         "bids": levels_view(exchange, market, Side.BUY, depth),
         "asks": levels_view(exchange, market, Side.SELL, depth),
@@ -126,6 +127,10 @@ def trade_view(exchange, trade):
         "size": trade.size,
         "buyer": name_of(exchange, trade.buyer_id),
         "seller": name_of(exchange, trade.seller_id),
+        # Ids too (they are already public in the book), so a page can pick out its own trades
+        # even after a rename.
+        "buyer_id": trade.buyer_id,
+        "seller_id": trade.seller_id,
         "aggressor_side": trade.aggressor_side.value,
         "forced": trade.forced,
     }
@@ -177,9 +182,21 @@ def position_view(market, trader_id):
 
 
 def total_view(exchange, trader_id):
-    """One trader's PnL added up over every market."""
+    """One trader's PnL added up over every market, and their equity, in dollars (each market's
+    PnL times its dollars per point). Rounded to cents, so 0.30000000000000004 is sent as 0.3."""
     pnl = exchange.total_pnl(trader_id)
-    return {"realized": pnl.realized, "unrealized": pnl.unrealized, "total": pnl.total}
+    return {
+        "realized": cents(pnl.realized),
+        "unrealized": cents(pnl.unrealized),
+        "total": cents(pnl.total),
+        "equity": cents(exchange.equity(trader_id)),
+    }
+
+
+def cents(dollars):
+    """Dollars rounded to the cent; a whole number of dollars stays a whole number (5, not 5.0)."""
+    rounded = round(dollars, 2)
+    return int(rounded) if rounded == int(rounded) else rounded
 
 
 # --- Whole messages -------------------------------------------------------------------------
@@ -322,6 +339,7 @@ def admin_message(room):
         "type": "admin_state",
         "room_code": room.code,
         "joining_locked": exchange.joining_locked,
+        "starting_equity": exchange.starting_equity,
         "unexported": room.has_unexported_changes(),  # Reset warns if this is True
         "info_drops": [
             {"time": drop.ts.isoformat(), "note": drop.note} for drop in exchange.info_drops
@@ -374,7 +392,43 @@ def review_state_message(room, pick):
         market_id, trader_id = pick
         if market_id in exchange.markets and trader_id in exchange.traders:
             review = review_message(exchange, market_id, trader_id)
-    return {"type": "review_state", "options": review_options(exchange), "review": review}
+    return {"type": "review_state", "options": review_options(exchange), "review": review,
+            "leaderboard": leaderboard_view(exchange)}
+
+
+def leaderboard_view(exchange):
+    """Every trader ranked by equity, highest first (SPEC Q153-Q158), for the projector only:
+    it has everyone's PnL, so it never goes to a trader's browser (Q10).
+
+    Each row has the equity and total PnL in dollars, and each started market's PnL in that
+    market's points. Ties share a rank (1, 2, 2, 4) and are listed in name order. Removed
+    traders are ranked too, marked "kicked".
+    """
+    market_ids = started_market_ids(exchange)
+    rows = [
+        {
+            "trader_id": trader_id,
+            "name": name,
+            "kicked": trader_id in exchange.kicked,
+            "equity": cents(exchange.equity(trader_id)),
+            "total_pnl": cents(exchange.total_pnl(trader_id).total),
+            "markets": {market_id: exchange.markets[market_id].pnl(trader_id).total
+                        for market_id in market_ids},
+        }
+        for trader_id, name in exchange.traders.items()
+    ]
+    rows.sort(key=lambda row: (-row["equity"], row["name"].casefold()))
+    for row in rows:
+        # Rank = 1 + how many have more equity, so equal equity (to the cent) shares a rank.
+        row["rank"] = 1 + sum(other["equity"] > row["equity"] for other in rows)
+    return {
+        "markets": [
+            {"market_id": market_id, "title": exchange.markets[market_id].config.title,
+             "dollars_per_point": exchange.markets[market_id].config.dollars_per_point}
+            for market_id in market_ids
+        ],
+        "rows": rows,
+    }
 
 
 def review_options(exchange):

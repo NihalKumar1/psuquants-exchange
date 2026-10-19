@@ -160,6 +160,8 @@ def test_trade_view_uses_names(ex, clock):
         "size": 4,
         "buyer": "Bob",
         "seller": "Alice",
+        "buyer_id": bob,  # so a trader's page can pick out its own trades (Q141)
+        "seller_id": alice,
         "aggressor_side": "buy",
         "forced": False,
     }
@@ -343,7 +345,8 @@ def test_admin_view_has_everyones_positions_and_pnl(ex, clock):
         "position": -4, "realized": 0, "unrealized": 20, "total": 20,
     }
     assert rows["Bob"]["markets"]["cars"]["total"] == -20
-    assert rows["Bob"]["total"] == {"realized": 0, "unrealized": -20, "total": -20}
+    assert rows["Bob"]["total"] == {"realized": 0, "unrealized": -20, "total": -20,
+                                    "equity": 99_980}
 
 
 # --- Trade or Tighten -----------------------------------------------------------------------

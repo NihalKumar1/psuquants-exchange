@@ -26,6 +26,7 @@ The games are "Trade or Tighten" estimation markets. Examples are "Number of car
   - Max absolute position per trader
   - Forced-trade size
   - Forced-trade timer length in seconds
+  - Contract multiplier, **$ per point** (Q144)
 - Market lifecycle: `CREATED → AUCTION → MM_QUOTING → FORCED_TRADE → OPEN ⇄ HALTED → SETTLED`
   - The admin may also open a market directly (`CREATED → OPEN`), skipping Trade or Tighten. This is a permanent option.
 
@@ -42,6 +43,7 @@ The games are "Trade or Tighten" estimation markets. Examples are "Number of car
   - **Two-sided quote** ("35 at 38, 100 up") posts a bid and an offer in one action.
   - **Hit / lift** is an immediate order that takes resting liquidity ("lift the 37 offer, 10"). In the UI this is **click-to-take**: the trader clicks the best bid or best offer (see Q2).
   - **Cancel** one order, and **cancel all** (one action for this market and one for all markets).
+  - **Amend** a resting order's price or size (Q133–Q138).
 - **Names are visible**: book levels show who owns each order, and the trade tape shows buyer and seller names, like open outcry.
 - Every order is validated against tick size and max position.
 - Trades print at the **resting order's price**.
@@ -50,6 +52,7 @@ The games are "Trade or Tighten" estimation markets. Examples are "Number of car
 - Each trader has, per market and in total: position, realized PnL, mark-to-market (unrealized) PnL, and total PnL. Each trader always sees their own numbers live.
 - **Mark price = mid of best bid and best offer.** If either side of the book is empty, **use the last traded price.**
 - After settlement, the mark is the settlement value.
+- Each market's PnL is in its own price units (points). **Total PnL is in dollars**: each market's PnL × its $ per point, added up. **Equity** = the game's starting equity + total PnL (Q144–Q152).
 
 ## Information drops
 - The instructor announces info drops out loud or on a slide. They are **not pushed through the app.**
@@ -114,6 +117,7 @@ The admin picks a trader and a market. The screen shows:
    - **ANSWERED:** No per-order size cap and no rate limits.
 15. Keyboard shortcuts for fast order entry?
    - **PARTLY ANSWERED:** Not in milestone 2. Still open for later.
+   - **ANSWERED (2026-10-18):** Yes; see Q142–Q143.
 
 ### Answered during milestone 1 planning (2026-09-27)
 16. Max-position basis: **worst case**. Buy room = max − (position + own resting bids). Sell room = max − (−position + own resting offers). Orders are clipped to the room.
@@ -282,6 +286,41 @@ One wild trade stretched the chart's price axis and squashed every other price i
 130. The **settlement line is always in view**: the range stretches to include it.
 131. The boxes are **remembered per market** in this browser, so they survive a reload. A Reset's new markets start blank (even though market ids like `m1` are reused).
 132. If Min ≥ Max, the boxes are outlined in red and the chart fits everything.
+
+### Answered while adding standard trading-platform features (2026-10-18)
+The exec asked for the features most trading platforms have. They picked amend, click the book to fill the order form, a "my trades" list and keyboard shortcuts, and the real-exchange priority rule for amends. The details marked were chosen while building and are waiting for the instructor's review.
+133. A trader can **amend** a resting order's price and size from the Resting orders list (✎, then Enter to send or Esc to stop). The size is **what should be left resting** (the size the list shows).
+134. **Priority (real-exchange rule):** a **smaller size at the same price keeps the order's place in line**. A **new price or a bigger size** cancels the order and places a new limit order, which joins the **back of the line** (and trades if it crosses the book).
+135. An amend that sends the order to the back is checked **like a new limit order** (tick size, max position with Q3's clipping, no trading with yourself). The old order's size doesn't count against max position. If the new order would be rejected, **the amend is rejected and the old order stays as it was**.
+136. Shrinking works **while halted** (it only lowers risk, like cancelling). A new price or a bigger size is rejected while halted ("market is not open"). Settled markets' orders can't be amended (Q27). **Approved by the instructor (2026-10-19).**
+137. Amending to size 0 is rejected ("use cancel"); amending to the same price and size is rejected ("nothing to change").
+138. In the log: a shrink is an `OrderReduced` event; a move is `OrderCancelled` (reason "amended") followed by the new order, whose `OrderAccepted` says which order it `replaces`. orders.csv gains `reduced_to` and `replaces` columns.
+139. **Click the book to fill the order form:** clicking a **deeper level** copies its price into the **Bid box** (for a bid level) or the **Offer box** (for an offer level) and puts the cursor in that size box. The best bid and offer still **trade** when clicked (Q2); **shift-click** copies their price instead.
+140. While a market is in Trade or Tighten (no order entry), clicking the book does nothing.
+141. **My trades:** the Trades panel has an **All / Mine** switch. Mine lists only the trader's own trades (forced trades included): time, market, **Buy/Sell**, price, size and **who with**. The browser remembers the choice. Updates carry each trade's `buyer_id` and `seller_id` (already public in the book) so the page can pick out its own trades even after a rename.
+142. **Keyboard shortcuts**, only when the cursor is not in a box: **B** → the Bid price box, **S** → the Offer price box, **Q** → the Quote's bid box, **Esc** → cancel all of my orders in that market. In a box, **Esc** just leaves the box (so Esc twice cancels all). **Enter** sends the form the cursor is in. A hint is in the top bar. **Approved by the instructor (2026-10-19), Esc cancel-all included.**
+143. With several markets, shortcuts act on the **market last clicked or typed in** (the first column until then); its title turns blue.
+
+### Answered while adding contract multipliers and starting equity (2026-10-18)
+Markets priced near 7,000 and near 120,000 were added up point for point, so the expensive market decided who was winning. The exec chose a contract multiplier per market (A) plus a starting equity shown as a score (B). Details marked were chosen while building and await the instructor's review.
+144. Each market has a **contract multiplier, "$ per point"**, set by the admin when creating (or editing, before it opens) the market, like a future's multiplier (the E-mini is $50 per index point). PnL in dollars = PnL in points × $ per point. The admin picks it so a typical miss costs about the same in every market (e.g. $0.01 for a ~120,000 market, $0.20 for a ~7,000 one).
+145. $ per point is **any number above 0** (decimals allowed). It **defaults to 1**: the form starts at 1, and a create command without it (older scripts, the load test) gets 1. Logs saved before this existed replay with 1.
+146. **Equity is a score only.** It never blocks an order; **max position stays the only risk limit**. (Using equity as a margin limit was considered and rejected: it would need a worst-case price for every market.)
+147. Each market's own numbers (Position tile, Realized, MTM, Total, the admin's per-market PnL, the review screen, the export) **stay in points**. Only **Total PnL and Equity are in dollars**.
+148. **Starting equity** is one amount for the whole game, set by the admin (**default $100,000**): a whole number of dollars, 0 or more. Changing it mid-game is allowed (it only shifts everyone's score). It is logged as a `StartingEquitySet` event. **Approved by the instructor (2026-10-19).**
+149. **Reset keeps the starting equity** (like the room code). **Approved by the instructor (2026-10-19).**
+150. Traders see **only their own** equity and total PnL (top bar), as Q10 requires. The admin sees everyone's Total PnL ($) and Equity. **Instructor (2026-10-19): yes, the instructor can show a leaderboard; build it now.** Its details are open questions (Q153 on).
+151. Dollar amounts are **rounded to the cent** before being sent, and shown with cents only when there are some ("$100,000", "-$12.50"). Each market's title line shows its multiplier ("$0.01/pt").
+152. The export is unchanged except that events.csv/events.json carry `dollars_per_point` on market events and the new `StartingEquitySet` event.
+
+### Answered while planning the leaderboard (2026-10-19)
+153. The leaderboard is shown on the **review screen (projector)**, never on traders' pages, so Q10 still holds (other traders' PnL never reaches a trader's browser).
+154. It can be shown **at any time**, live: equity with open positions valued at each market's current mark, updating like the review chart.
+155. Each row shows **rank, name, equity, total PnL ($)** and **each market's PnL (in that market's points, Q147)**. Ranked by equity, highest first.
+156. The review page has a **Review | Leaderboard switch** in its top bar; Leaderboard replaces the chart and trades with the ranked table.
+157. Traders the admin removed **are shown, marked "(removed)"**, and ranked like everyone else.
+158. **Ties share a rank** (1, 2, 2, 4), listed in name order.
+159. The leaderboard is built in the same PR as the trader features and equity (PR #7).
 
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.

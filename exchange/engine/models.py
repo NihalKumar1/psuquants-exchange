@@ -40,6 +40,10 @@ class MarketConfig:
     max_position: int
     forced_trade_size: int
     forced_trade_seconds: int
+    # The contract multiplier: one point of price is worth this many dollars of PnL (like the
+    # E-mini's $50 per index point). It lets markets priced near 7,000 and near 120,000 count
+    # comparably in total PnL and equity (SPEC Q144).
+    dollars_per_point: float = 1
 
 
 @dataclass(eq=False)  # eq=False: two orders are the same only if they are the same object

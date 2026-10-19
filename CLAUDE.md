@@ -59,6 +59,12 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   (a `PricePoint` whenever the mark or last price changes) for the review chart, and
   `engine/review.py` turns a market into one trader's fills with running position, realized,
   MTM (at the mark right after each fill) and edge vs settlement.
+  Amending an order (`Exchange.amend`, SPEC Q133–Q138): a shrink at the same price is an
+  `OrderReduced` event (keeps its place); anything else is `OrderCancelled` ("amended") plus a new
+  order through `decide_order(..., replaces=old_id)`.
+  Money (SPEC Q144–Q152): each market's PnL is in points; `MarketConfig.dollars_per_point` is
+  its contract multiplier. `Exchange.total_pnl` adds up PnL × multiplier (dollars) and
+  `Exchange.equity` = `starting_equity` (admin-set, default $100,000) + that total. Score only.
 - `exchange/server/room.py`: room code, join/rejoin tokens, live trader and admin connections,
   trader + admin commands, and `reset()` (new empty game, same code; connected traders are
   carried over with **new ids and tokens**, so the socket loop looks up `trader_of(connection)`
@@ -69,6 +75,7 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   Each update also carries `my_fills`: the trader's own fill alerts, with the text already
   written ("You bought 5 of Cars at 36, now LONG 5") and a colour (buy/sell/even). The page
   shows it in the banner and flashes the market's column and Position tile (SPEC Q110–Q118).
+  Trades carry `buyer_id`/`seller_id` so the page's Trades "Mine" switch can find its own (Q141).
 - `exchange/server/app.py`: FastAPI + WebSocket wiring (`create_app(room, admin_secret)`, used by
   tests). Traders on `/ws`, admin on `/admin/ws`. Also runs the forced-trade timer (an asyncio
   task that ends the window when time is up; Reset cancels running timers). A trader command
@@ -77,13 +84,16 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   carries the command's `market_id`, `kind` and `side`, so the trader page can outline the form
   that sent it.
   The review page is on `/review/ws` (admin password, then `review_pick`); its live pushes are
-  throttled to one per `review_interval` (1 s). `GET /admin/export` (password in the
+  throttled to one per `review_interval` (1 s). Every `review_state` also carries the
+  `leaderboard` (`views.leaderboard_view`: everyone ranked by equity, ties share a rank, SPEC
+  Q153–Q158); it goes only to the review page, never to traders (Q10). `GET /admin/export` (password in the
   `X-Admin-Secret` header) downloads the zip; the room remembers the export so Reset can warn.
 - `exchange/server/export.py`: the export zip (trades/orders/events CSVs + events.json), with US
   Eastern times and names in place of trader ids. Needs `tzdata` on Windows.
 - `exchange/server/main.py`: the app uvicorn runs (`build_app(environ)` reads `ADMIN_SECRET`).
 - `exchange/server/static/`: trader page, admin page, review page (`review.js` draws the chart as
-  plain SVG; its price axis has instructor Min/Max boxes, remembered per market in localStorage),
+  plain SVG; its price axis has instructor Min/Max boxes, remembered per market in localStorage;
+  a Review | Leaderboard switch in its top bar swaps the chart and trades for the leaderboard),
   and `common.js` helpers (plain HTML/JS/CSS, no build step).
 - `scripts/load_test.py`: the 60-bot load test (also imported by `tests/test_load_test.py`).
   `scripts/demo_fill.py` (gitignored) fills a book for screenshots.

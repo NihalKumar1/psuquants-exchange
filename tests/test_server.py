@@ -84,7 +84,7 @@ def test_join_gets_a_welcome_and_a_snapshot(client):
     assert welcome["token"]
     assert snapshot["markets"]["cars"]["title"] == "Test market cars"
     assert snapshot["me"]["cars"]["position"] == 0
-    assert snapshot["total"] == {"realized": 0, "unrealized": 0, "total": 0}
+    assert snapshot["total"] == {"realized": 0, "unrealized": 0, "total": 0, "equity": 100_000}
     assert snapshot["tape"] == {"cars": []}
 
 
@@ -330,6 +330,46 @@ def test_cancel_and_cancel_all(client):
     assert update["me"]["cars"]["orders"] == []
     assert update["markets"]["cars"]["bids"] == []
     assert update["markets"]["cars"]["asks"] == []
+
+
+def test_amend_shrinks_an_order_in_place(client):
+    with client.websocket_connect("/ws") as alice:
+        join(alice, "Alice")
+        limit(alice, "buy", 30, 10)
+        (order,) = alice.receive_json()["me"]["cars"]["orders"]
+
+        alice.send_json({"type": "amend", "market_id": "cars", "order_id": order["order_id"],
+                         "price": 30, "size": 4})
+        (amended,) = alice.receive_json()["me"]["cars"]["orders"]
+
+    assert (amended["order_id"], amended["price"], amended["size"]) == (order["order_id"], 30, 4)
+
+
+def test_amend_to_a_new_price_replaces_the_order(client):
+    with client.websocket_connect("/ws") as alice:
+        join(alice, "Alice")
+        limit(alice, "buy", 30, 10)
+        (order,) = alice.receive_json()["me"]["cars"]["orders"]
+
+        alice.send_json({"type": "amend", "market_id": "cars", "order_id": order["order_id"],
+                         "price": 31, "size": 10})
+        (amended,) = alice.receive_json()["me"]["cars"]["orders"]
+
+    assert amended["order_id"] != order["order_id"]
+    assert (amended["price"], amended["size"]) == (31, 10)
+
+
+def test_a_rejected_amend_says_it_was_an_amend(client):
+    with client.websocket_connect("/ws") as alice:
+        join(alice, "Alice")
+        limit(alice, "buy", 30, 10)
+        (order,) = alice.receive_json()["me"]["cars"]["orders"]
+
+        alice.send_json({"type": "amend", "market_id": "cars", "order_id": order["order_id"],
+                         "price": 30, "size": 10})
+        reply = alice.receive_json()
+
+    assert (reply["type"], reply["kind"], reply["reason"]) == ("rejected", "amend", "nothing to change")
 
 
 # --- Several markets at once ----------------------------------------------------------------

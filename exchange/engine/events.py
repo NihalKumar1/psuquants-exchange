@@ -27,17 +27,19 @@ class MarketCreated(Event):
     max_position: int
     forced_trade_size: int
     forced_trade_seconds: int
+    dollars_per_point: float = 1  # 1 in logs saved before multipliers existed
 
 
 @dataclass(frozen=True, kw_only=True)
 class MarketEdited(Event):
-    """New settings for a market that hasn't opened yet (all five, even unchanged ones)."""
+    """New settings for a market that hasn't opened yet (all of them, even unchanged ones)."""
 
     title: str
     tick_size: int
     max_position: int
     forced_trade_size: int
     forced_trade_seconds: int
+    dollars_per_point: float = 1
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -121,6 +123,13 @@ class InfoDropMarked(Event):
 
 
 @dataclass(frozen=True, kw_only=True)
+class StartingEquitySet(Event):
+    """The dollars every trader's equity starts at, before any PnL (SPEC Q148)."""
+
+    amount: int
+
+
+@dataclass(frozen=True, kw_only=True)
 class TraderJoined(Event):
     """A new trader joined the room. The id never changes; the name is what everyone sees."""
 
@@ -200,6 +209,7 @@ class OrderAccepted(Event):
     price: int
     requested_size: int
     size: int  # smaller than requested_size if clipped by max position
+    replaces: int | None = None  # the order this one replaced, when made by an amend
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -226,6 +236,14 @@ class OrderRested(Event):
 class OrderCancelled(Event):
     order_id: int
     reason: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class OrderReduced(Event):
+    """An amend that only shrank a resting order: it keeps its place in line."""
+
+    order_id: int
+    size: int  # what is left resting now
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -260,6 +278,7 @@ EVENT_TYPES = {
         TraderRenamed,
         JoiningLocked,
         JoiningUnlocked,
+        StartingEquitySet,
         WidthSubmitted,
         WidthsWithdrawn,
         MarketMakerQuoted,
@@ -268,6 +287,7 @@ EVENT_TYPES = {
         TradeExecuted,
         OrderRested,
         OrderCancelled,
+        OrderReduced,
         Rejected,
     )
 }

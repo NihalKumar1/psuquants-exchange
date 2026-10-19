@@ -62,6 +62,10 @@ class PnL:
     def __add__(self, other):
         return PnL(self.realized + other.realized, self.unrealized + other.unrealized)
 
+    def times(self, factor):
+        """This PnL scaled, e.g. from points to dollars by a market's dollars per point."""
+        return PnL(self.realized * factor, self.unrealized * factor)
+
 
 def mark_price(best_bid, best_ask, last_price, settlement_value=None):
     """The price used to value open positions.

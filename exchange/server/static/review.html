@@ -23,21 +23,26 @@
   </div>
 </section>
 
-<!-- Review screen, for the projector: one trader's trades in one market. -->
+<!-- Review screen, for the projector: one trader's trades in one market, or the leaderboard
+     (the Review | Leaderboard switch, SPEC Q156). -->
 <section id="review-screen" hidden>
   <header class="topbar">
     <div class="wordmark">PSU QUANTS <span>EXCHANGE</span> · REVIEW</div>
-    <label class="picker"><small>Market</small><select id="pick-market"></select></label>
-    <label class="picker"><small>Trader</small><select id="pick-trader"></select></label>
-    <span id="market-status" class="pill" hidden></span>
+    <div class="toggle view-switch" id="view-switch">
+      <button type="button" data-view="review">Review</button>
+      <button type="button" data-view="leaderboard">Leaderboard</button>
+    </div>
+    <label class="picker review-only"><small>Market</small><select id="pick-market"></select></label>
+    <label class="picker review-only"><small>Trader</small><select id="pick-trader"></select></label>
+    <span id="market-status" class="pill review-only" hidden></span>
     <div class="me">
-      <div class="stat" id="settled-stat" hidden><small>Settled at</small><b id="settled-value"></b></div>
+      <div class="stat review-only" id="settled-stat" hidden><small>Settled at</small><b id="settled-value"></b></div>
       <button id="log-out" type="button" class="ghost">Log out</button>
     </div>
   </header>
   <p id="message"></p>
 
-  <main class="review">
+  <main class="review review-only">
     <section class="panel">
       <div class="chart-head">
         <h2>Price</h2>
@@ -62,6 +67,19 @@
       <h2 id="fills-heading">Trades</h2>
       <div class="scroll-x">
         <table id="fills">
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Everyone ranked by equity (renderLeaderboard in review.js). -->
+  <main class="review leaderboard-only">
+    <section class="panel">
+      <h2>Leaderboard</h2>
+      <div class="scroll-x">
+        <table id="leaderboard">
           <thead></thead>
           <tbody></tbody>
         </table>
