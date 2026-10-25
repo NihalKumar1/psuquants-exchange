@@ -479,7 +479,7 @@ def record_final_checks(admin, bots, market_id, results):
     results.bots_disconnected = [trader["name"] for trader in traders
                                  if trader["name"] in bot_names and not trader["connected"]]
     results.forced_printed = bots[0].forced_trades[market_id]
-    results.position_sum = sum(p["position"] for p in admin.state["markets"][market_id]["positions"])
+    results.position_sum = sum(admin.state["markets"][market_id]["positions"])
     results.pnl_sum = sum(trader["markets"][market_id]["total"] for trader in traders)
 
 
@@ -490,7 +490,7 @@ def record_round_checks(admin, bots, round_id, results):
     house = round_["house"]["markets"]
     results.round_settled = round_["status"] == "settled"
     results.round_position_sum = sum(
-        abs(sum(p["position"] for p in admin.state["markets"][market_id]["positions"])
+        abs(sum(admin.state["markets"][market_id]["positions"])
             + house[market_id]["position"])
         for market_id in round_["markets"])
     traders_pnl = sum(trader["markets"][market_id]["total"]

@@ -88,7 +88,8 @@ def test_the_admin_creates_and_starts_a_round(room):
         assert (book["best_bid"], book["best_ask"]) == (99, 101)
         assert book["bids"][0]["orders"][0]["name"] == "House"
         # the house is not one of the students in the positions list
-        assert [row["name"] for row in book["positions"]] == ["Alice"]
+        assert book["positions"] == [0]  # Alice's
+        assert [trader["name"] for trader in update["traders"]] == ["Alice"]
 
 
 def test_round_commands_that_make_no_sense_are_refused(room):

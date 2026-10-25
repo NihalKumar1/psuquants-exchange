@@ -96,8 +96,8 @@ def test_others_are_told_when_someone_new_joins(client):
         update = alice.receive_json()
 
     assert update["type"] == "update"
-    positions = update["markets"]["cars"]["positions"]
-    assert [(row["name"], row["position"]) for row in positions] == [("Alice", 0), ("Bob", 0)]
+    names = [trader["name"] for trader in update["traders"]]
+    assert list(zip(names, update["markets"]["cars"]["positions"])) == [("Alice", 0), ("Bob", 0)]
 
 
 def test_name_is_taken_while_its_owner_is_connected(client):
@@ -192,7 +192,8 @@ def test_a_click_take_trades_and_everyone_gets_the_new_trade(client, room):
         assert names_on(update, "asks") == [("Alice", 6)]
 
     # Bob sees Alice's position, but only his own PnL.
-    positions = {row["name"]: row["position"] for row in bob_update["markets"]["cars"]["positions"]}
+    names = [trader["name"] for trader in bob_update["traders"]]
+    positions = dict(zip(names, bob_update["markets"]["cars"]["positions"]))
     assert positions == {"Alice": -4, "Bob": 4}
     assert bob_update["me"]["cars"] == trader_view(room.exchange, "cars", "t2")
     assert alice_update["me"]["cars"]["position"] == -4

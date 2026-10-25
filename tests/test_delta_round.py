@@ -476,3 +476,20 @@ def test_changing_the_config_keeps_the_round_id():
     # Sanity check on the helper: RoundConfig is a frozen dataclass like MarketConfig.
     config = make_round()
     assert replace(config, minutes=5).round_id == "SPX"
+
+
+def test_greeks_are_worked_out_once_per_move(monkeypatch):
+    # Every update asks for them many times (each trader's net delta), so they are kept until
+    # the price moves, then worked out afresh.
+    ex = started(rng=ScriptedNormal(0.5, 0.5))
+    round_ = ex.rounds["SPX"]
+    calls = []
+    real = round_.greeks_at
+    monkeypatch.setattr(round_, "greeks_at", lambda *args: calls.append(args) or real(*args))
+
+    ex.step_round("SPX")                    # the house re-quotes: one each, worked out afresh
+    assert len(calls) == 3
+    assert round_.greeks("SPX-C-100") == black_scholes("call", round_.fair_price, 100, 0.2, 59 / 60)
+    round_.greeks("SPX-C-100")
+    ex.net_delta("SPX", "alice")
+    assert len(calls) == 3                  # nothing new until the next move

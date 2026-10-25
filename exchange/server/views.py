@@ -76,11 +76,10 @@ def market_view(exchange, market_id, depth=BOOK_DEPTH):
         "last_price": market.last_price,
         "mark": market.mark(),
         "settlement_value": market.settlement_value,
-        # Everyone's position is public; everyone who joined is listed, even at 0.
-        "positions": [
-            {"trader_id": trader_id, "name": name, "position": market.position(trader_id).size}
-            for trader_id, name in exchange.traders.items()
-        ],
+        # Everyone's position is public; everyone who joined is listed, even at 0. Just the
+        # numbers, in join order: whose they are is in the update's "traders" list, sent once
+        # rather than once per market (a round adds several markets to every update).
+        "positions": [market.position(trader_id).size for trader_id in exchange.traders],
         "tot": tot_view(exchange, market),
     }
 
@@ -280,18 +279,29 @@ def snapshot_message(exchange, trader_id):
     }
 
 
-def update_message(exchange, trader_id, events):
+def update_message(exchange, trader_id, events, public=None):
     """Sent after every command: the current state plus only the trades that just happened.
 
-    The full tape is only in the snapshot, so updates stay small as the tape grows.
+    The full tape is only in the snapshot, so updates stay small as the tape grows. A broadcast
+    passes in `public` (public_update), built once for every trader instead of once each.
     """
+    if public is None:
+        public = public_update(exchange, events)
     return {
         "type": "update",
-        **state_for(exchange, trader_id),
+        **state_for(exchange, trader_id, public["state"]),
+        "new_trades": public["new_trades"],
+        "my_fills": my_fills(exchange, trader_id, events),
+    }
+
+
+def public_update(exchange, events):
+    """The part of an update that is the same for every trader."""
+    return {
+        "state": public_state(exchange),
         "new_trades": [
             trade_view(exchange, event) for event in events if isinstance(event, TradeExecuted)
         ],
-        "my_fills": my_fills(exchange, trader_id, events),
     }
 
 
@@ -374,10 +384,35 @@ def position_text(position):
     return "FLAT"
 
 
-def state_for(exchange, trader_id):
-    depth = book_depth(exchange)
+def state_for(exchange, trader_id, public=None):
+    """Everything on one trader's screen: the public part (the same for everyone, so a broadcast
+    builds it once and passes it in as `public`) plus the trader's own orders, PnL and risk."""
+    if public is None:
+        public = public_state(exchange)
     return {
         "name": exchange.traders[trader_id],  # can change if the admin renames them
+        **public,
+        "me": {
+            market_id: trader_view(exchange, market_id, trader_id)
+            for market_id in exchange.markets
+        },
+        "total": total_view(exchange, trader_id),
+        # The trader's own net delta, gamma and hedging error, only while greeks are shown:
+        # with the greeks hidden, working out your delta is part of the exercise.
+        "my_rounds": {
+            round_id: my_round_view(exchange, round_id, trader_id)
+            for round_id in exchange.rounds
+        } if exchange.greeks_shown else {},
+    }
+
+
+def public_state(exchange):
+    """The part of every trader's screen that is the same for everyone."""
+    depth = book_depth(exchange)
+    return {
+        # Everyone who joined, in join order (the order of each market's "positions").
+        "traders": [{"trader_id": trader_id, "name": name}
+                    for trader_id, name in exchange.traders.items()],
         # What the page lays out: one column per running market, and the markets that get a
         # column in the positions table. The page draws exactly this, so the rules live here.
         "columns": running_market_ids(exchange),
@@ -386,22 +421,11 @@ def state_for(exchange, trader_id):
         "markets": {
             market_id: market_view(exchange, market_id, depth) for market_id in exchange.markets
         },
-        "me": {
-            market_id: trader_view(exchange, market_id, trader_id)
-            for market_id in exchange.markets
-        },
-        "total": total_view(exchange, trader_id),
         "greeks_shown": exchange.greeks_shown,
         "rounds": {
             round_id: round_view(exchange, round_id, with_greeks=exchange.greeks_shown)
             for round_id in exchange.rounds
         },
-        # The trader's own net delta, gamma and hedging error, only while greeks are shown:
-        # with the greeks hidden, working out your delta is part of the exercise.
-        "my_rounds": {
-            round_id: my_round_view(exchange, round_id, trader_id)
-            for round_id in exchange.rounds
-        } if exchange.greeks_shown else {},
     }
 
 

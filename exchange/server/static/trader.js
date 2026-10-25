@@ -509,13 +509,13 @@ function renderPositions() {
     tbody.replaceChildren(emptyRow(1, "No market has started yet"));
     return;
   }
-  // Every market lists every trader, in the same (join) order, so row i is the same trader in
-  // each market's list.
-  const rows = state.markets[marketIds[0]].positions.map((entry, i) => {
-    const row = tableRow([entry.name, ...marketIds.map((marketId) =>
-      signed(state.markets[marketId].positions[i].position))]);
+  // Each market's positions are just numbers in join order, the order of state.traders, so
+  // position i is trader i's in every market.
+  const rows = state.traders.map((trader, i) => {
+    const row = tableRow([trader.name, ...marketIds.map((marketId) =>
+      signed(state.markets[marketId].positions[i]))]);
     for (let c = 1; c < row.cells.length; c++) row.cells[c].className = "num";
-    if (entry.trader_id === me.trader_id) row.classList.add("mine");
+    if (trader.trader_id === me.trader_id) row.classList.add("mine");
     return row;
   });
   tbody.replaceChildren(...rows);

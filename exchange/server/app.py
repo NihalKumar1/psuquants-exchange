@@ -67,7 +67,13 @@ from exchange.engine import (
 )
 
 from .export import export_filename, export_zip
-from .views import admin_message, review_state_message, snapshot_message, update_message
+from .views import (
+    admin_message,
+    public_update,
+    review_state_message,
+    snapshot_message,
+    update_message,
+)
 
 STATIC_DIR = Path(__file__).parent / "static"
 SEND_TIMEOUT_SECONDS = 5  # a browser this slow to accept a message is treated as gone
@@ -206,11 +212,14 @@ def create_app(room, admin_secret, review_interval=1.0, round_interval=1.0):
             await tell_admins()
 
     async def broadcast(events, skip=None):
-        """Send every connected trader (except `skip`) an update about these events."""
+        """Send every connected trader (except `skip`) an update about these events. The part
+        that is the same for everyone is built once (the lock is held, so nothing changes)."""
+        public = public_update(room.exchange, events)
         for trader_id, connection in list(room.connections.items()):
             if trader_id == skip:
                 continue
-            if not await send(connection, update_message(room.exchange, trader_id, events)):
+            message = update_message(room.exchange, trader_id, events, public)
+            if not await send(connection, message):
                 room.disconnect(trader_id, connection)
                 await close(connection)
 

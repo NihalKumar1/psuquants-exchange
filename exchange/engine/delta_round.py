@@ -83,6 +83,7 @@ class DeltaRound:
         # One {trader_id: net delta} per move: what each trader carried into it (review chart).
         self.carried = []
         self.abs_delta_sums = {}  # trader_id -> sum of |net delta| carried into each move
+        self.greeks_now = {}  # market_id -> its Greeks until the next move (they can't change)
 
     # --- Queries --------------------------------------------------------------------------
 
@@ -121,8 +122,12 @@ class DeltaRound:
 
     def greeks(self, market_id):
         """Value, delta and gamma of one unit of this market at the fair price. Options use
-        Black-Scholes at the implied vol (the vol everyone is told, SPEC Q175)."""
-        return self.greeks_at(market_id, self.fair_price, self.steps_taken)
+        Black-Scholes at the implied vol (the vol everyone is told, SPEC Q175). Every update
+        asks for them many times, so each is worked out once per move."""
+        if market_id not in self.greeks_now:
+            self.greeks_now[market_id] = self.greeks_at(market_id, self.fair_price,
+                                                        self.steps_taken)
+        return self.greeks_now[market_id]
 
     def greeks_at(self, market_id, price, step):
         """The same, as they were after `step` moves with the underlying at `price` (the review
@@ -218,6 +223,7 @@ class DeltaRound:
             self.carried.append(carried)
             self.fair_price = event.price
             self.steps_taken = event.step
+            self.greeks_now = {}
             self.last_draw = event.draw
             self.history.append(event)
         elif isinstance(event, RoundSettled):
