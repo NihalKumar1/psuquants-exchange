@@ -13,8 +13,11 @@ import random
 from dataclasses import replace
 from datetime import datetime, timezone
 
+from . import bots
 from .events import (
     AuctionStarted,
+    BotsStarted,
+    BotsStopped,
     ForcedTradeStarted,
     InfoDropMarked,
     JoiningLocked,
@@ -59,6 +62,8 @@ class Exchange:
         self.kicked = set()  # trader_ids the admin removed (they stay in self.traders)
         self.info_drops = []  # InfoDropMarked events, oldest first
         self.joining_locked = False
+        self.bots = {}  # trader_id -> "maker" or "taker", for the traders that are bots
+        self.bots_on = {"maker": False, "taker": False}  # the admin's two switches
         self.starting_equity = DEFAULT_STARTING_EQUITY
         self.next_trader_id = 1
         self.next_order_id = 1
@@ -153,6 +158,93 @@ class Exchange:
             raise ValueError("joining is already unlocked")
         return self._record([JoiningUnlocked()])
 
+    # --- Bots: admin commands (SPEC Q209-Q218) ---------------------------------------------
+
+    def start_bots(self, kind):
+        """Turn the makers (or takers) on. The first time, they join the game as traders."""
+        self._check_bot_kind(kind)
+        if self.bots_on[kind]:
+            raise ValueError(f"the {kind}s are already on")
+        events = []
+        if kind not in self.bots.values():
+            next_id = self.next_trader_id
+            for name in bots.NAMES[kind]:
+                self._check_name(name)  # a student may have taken it
+                events.append(TraderJoined(trader_id=f"t{next_id}", name=name, bot=kind))
+                next_id += 1
+        events.append(BotsStarted(kind=kind))
+        return self._record(events)
+
+    def stop_bots(self, kind):
+        """Turn the makers (or takers) off: their resting orders are cancelled. They stay in the
+        game with their positions, and come back if turned on again."""
+        self._check_bot_kind(kind)
+        if not self.bots_on[kind]:
+            raise ValueError(f"the {kind}s are already off")
+        events = [
+            event
+            for trader_id in self._bot_ids(kind)
+            for market in self.markets.values()
+            for event in market.decide_cancel_all(trader_id, reason="bots turned off")
+        ]
+        events.append(BotsStopped(kind=kind))
+        return self._record(events)
+
+    def step_bots(self, kind):
+        """One step of the makers (or takers), called by the server once a second while they are
+        on. Each bot acts with a chance (bots.CHANCE_TO_ACT), using self.rng. What they do is
+        logged as ordinary orders, so replay never runs a bot."""
+        if not self.bots_on[kind]:
+            return []
+        events = []
+        for bot_id in self._bot_ids(kind):
+            if bot_id in self.kicked or self.rng.random() >= bots.CHANCE_TO_ACT[kind]:
+                continue
+            if kind == "maker":
+                events += self._maker_requotes(bot_id)
+            else:
+                events += self._taker_trades(bot_id)
+        return events
+
+    def _maker_requotes(self, bot_id):
+        """Replace the maker's quote in every open market it can price. A side it has no room
+        for (max position) is left out, so it never sends an order that would be rejected."""
+        events = []
+        for market in self.markets.values():
+            if market.status is not MarketStatus.OPEN:
+                continue
+            events += self._record(market.decide_cancel_all(bot_id, reason="re-quote"))
+            quote = bots.maker_quote(market, bot_id, self.rng.randint(*bots.MAKER_HALF_WIDTH_TICKS))
+            if quote is None:
+                continue
+            size = self.rng.randint(*bots.MAKER_SIZE)
+            for side, price in zip((Side.BUY, Side.SELL), quote):
+                if market.room(bot_id, side) >= 1:
+                    events += self.place_limit(market.market_id, bot_id, side, price,
+                                               min(size, market.room(bot_id, side)))
+        return events
+
+    def _taker_trades(self, bot_id):
+        """Buy at the best offer or sell at the best bid in a random open market."""
+        markets = [market for market in self.markets.values()
+                   if market.status is MarketStatus.OPEN]
+        if not markets:
+            return []
+        market = self.rng.choice(markets)
+        side = self.rng.choice([Side.BUY, Side.SELL])
+        price = bots.taker_price(market, side)
+        size = min(self.rng.randint(*bots.TAKER_SIZE), market.room(bot_id, side))
+        if price is None or size < 1:
+            return []
+        return self.take(market.market_id, bot_id, side, price, size)
+
+    def _bot_ids(self, kind):
+        return [trader_id for trader_id, bot in self.bots.items() if bot == kind]
+
+    def _check_bot_kind(self, kind):
+        if kind not in self.bots_on:
+            raise ValueError("a bot is a maker or a taker")
+
     # --- Trade or Tighten: admin commands --------------------------------------------------
     # CREATED -> AUCTION -> MM_QUOTING -> FORCED_TRADE -> OPEN (or open_market to skip it all)
 
@@ -190,11 +282,11 @@ class Exchange:
 
     def forced_trade_participants(self, market_id):
         """Who must trade in the forced trade: every trader not kicked, except the MM, in join
-        order. Late joiners and traders who are offline are included."""
+        order. Late joiners and traders who are offline are included; bots are not (Q212)."""
         mm_id = self.markets[market_id].mm_id
         return [
             trader_id for trader_id in self.traders
-            if trader_id not in self.kicked and trader_id != mm_id
+            if trader_id not in self.kicked and trader_id != mm_id and trader_id not in self.bots
         ]
 
     def _check_status(self, market_id, allowed, refusal):
@@ -361,11 +453,18 @@ class Exchange:
                 max_position=event.max_position, forced_trade_size=event.forced_trade_size,
                 forced_trade_seconds=event.forced_trade_seconds,
                 dollars_per_point=event.dollars_per_point,
+                min_price=event.min_price, max_price=event.max_price,
             )
             self.markets[event.market_id] = Market(config)
         elif isinstance(event, TraderJoined):
             self.traders[event.trader_id] = event.name
             self.next_trader_id += 1
+            if event.bot is not None:
+                self.bots[event.trader_id] = event.bot
+        elif isinstance(event, BotsStarted):
+            self.bots_on[event.kind] = True
+        elif isinstance(event, BotsStopped):
+            self.bots_on[event.kind] = False
         elif isinstance(event, TraderKicked):
             self.kicked.add(event.trader_id)
         elif isinstance(event, TraderRenamed):
@@ -447,6 +546,11 @@ def check_settings(config):
     is_number = isinstance(multiplier, (int, float)) and not isinstance(multiplier, bool)
     if not is_number or not math.isfinite(multiplier) or multiplier <= 0:
         raise ValueError("$ per point must be a number above 0")
+    for label, limit in (("min price", config.min_price), ("max price", config.max_price)):
+        if limit is not None and not is_whole_number(limit):
+            raise ValueError(f"{label} must be a whole number (or left blank for no limit)")
+    if None not in (config.min_price, config.max_price) and config.min_price >= config.max_price:
+        raise ValueError("min price must be below max price")
     return {
         "title": title,
         "tick_size": config.tick_size,
@@ -454,4 +558,6 @@ def check_settings(config):
         "forced_trade_size": config.forced_trade_size,
         "forced_trade_seconds": config.forced_trade_seconds,
         "dollars_per_point": config.dollars_per_point,
+        "min_price": config.min_price,
+        "max_price": config.max_price,
     }

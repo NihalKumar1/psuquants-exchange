@@ -50,6 +50,7 @@ Load test (60 bots, a whole game; the server must be running with the same `ADMI
 ```
 python scripts/load_test.py http://127.0.0.1:8000     # or the Render https:// address
 ```
+Add `--house-bots` to have the exchange's own maker and taker bots trade during the run.
 Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in README.md).
 
 ## Layout
@@ -65,6 +66,12 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   Money (SPEC Q144–Q152): each market's PnL is in points; `MarketConfig.dollars_per_point` is
   its contract multiplier. `Exchange.total_pnl` adds up PnL × multiplier (dollars) and
   `Exchange.equity` = `starting_equity` (admin-set, default $100,000) + that total. Score only.
+  Price limits (SPEC Q204-Q208): `MarketConfig.min_price` / `max_price` (None = no limit);
+  `Market.price_limit_refusal` checks every order and the MM quote.
+  Bots (SPEC Q209-Q218): `engine/bots.py` decides what a maker quotes and where a taker trades,
+  from public information only. Bots are traders (`TraderJoined.bot`), listed in
+  `Exchange.bots`; `Exchange.start_bots` / `stop_bots` are the admin's switches
+  (`bots_on`), and the server calls `Exchange.step_bots(kind)` once a second while one is on.
 - `exchange/server/room.py`: room code, join/rejoin tokens, live trader and admin connections,
   trader + admin commands, and `reset()` (new empty game, same code; connected traders are
   carried over with **new ids and tokens**, so the socket loop looks up `trader_of(connection)`
@@ -78,7 +85,8 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   Trades carry `buyer_id`/`seller_id` so the page's Trades "Mine" switch can find its own (Q141).
 - `exchange/server/app.py`: FastAPI + WebSocket wiring (`create_app(room, admin_secret)`, used by
   tests). Traders on `/ws`, admin on `/admin/ws`. Also runs the forced-trade timer (an asyncio
-  task that ends the window when time is up; Reset cancels running timers). A trader command
+  task that ends the window when time is up; Reset cancels running timers), and a clock task
+  per bot kind while it is on (`bot_clocks`, one step every `bot_interval`; Reset stops them). A trader command
   may carry a `"ref"`; the server then replies `{"type": "done", "ref"}` once it has told
   everyone (used by the load test to time commands; browsers never send it). A `rejected` reply
   carries the command's `market_id`, `kind` and `side`, so the trader page can outline the form

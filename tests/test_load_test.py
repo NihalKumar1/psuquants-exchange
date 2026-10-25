@@ -131,3 +131,15 @@ def test_a_short_load_test_passes(server_url):
     assert failed_checks(results) == [], results.errors
     assert results.forced_expected == 4  # every bot except the market maker
     assert sum(results.actions.values()) > 20
+
+
+def test_a_short_load_test_with_the_exchanges_own_bots_passes(server_url):
+    # The maker and taker bots trade beside the load test's bots; positions and PnL (theirs
+    # included) must still add up to 0.
+    args = load_test.parse_args([server_url, "--bots", "5", "--seconds", "4",
+                                 "--interval", "0.2", "--forced-seconds", "2", "--seed", "2",
+                                 "--house-bots"])
+
+    results = asyncio.run(load_test.run(args, SECRET))
+
+    assert failed_checks(results) == [], results.errors

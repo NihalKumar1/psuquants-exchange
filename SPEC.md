@@ -322,6 +322,28 @@ Markets priced near 7,000 and near 120,000 were added up point for point, so the
 158. **Ties share a rank** (1, 2, 2, 4), listed in name order.
 159. The leaderboard is built in the same PR as the trader features and equity (PR #7).
 
+### Answered while planning bots and price limits (2026-10-25)
+The exec asked for maker and taker bots that the admin can turn on and off, whose PnL shows like everyone's and who give away no extra information, and for price limits so nobody can put absurd numbers in the book. (Numbered from 204: the delta-hedging branch uses 160-203.) Details marked *(proposed)* were chosen while building and await the instructor's review.
+
+Price limits:
+204. Each market may have a **min price** and a **max price**, set by the admin when creating it (or editing it before it opens). Either or both may be left blank (no limit). *(proposed: whole numbers, min below max.)*
+205. *(proposed)* Every bid, offer, quote, click on the book and amend must be priced inside the limits, or it is rejected ("price must be between 0 and 100"; "at least 30" / "at most 180" with only one limit). The market maker's Trade or Tighten quote must be inside them too.
+206. *(proposed)* The **settlement value is not limited**: it is the truth, whatever the limits.
+207. *(proposed)* Traders see a market's limits on its title line ("Prices 0-100"); the admin sees them in a Range column.
+208. *(proposed)* Logs saved before limits existed replay with no limits, and an export of a game without limits looks as it did.
+
+Bots:
+209. The admin page has **two switches: Makers on/off and Takers on/off**, for the whole game (all open markets).
+210. Bots are **labelled**: "Maker Bot 1", "Maker Bot 2", "Taker Bot 1" to "Taker Bot 3" *(proposed: 2 makers, 3 takers)*. They are ordinary traders, so their positions and PnL show in the positions table, the admin's table (status "Bot"), the leaderboard, the review screen and the export like everyone's.
+211. Bots **see only what students see**: the book, the last trade and their own position. They never know the true value or anyone's PnL, so they give nothing away.
+212. Bots **sit out Trade or Tighten**: they never bid widths and are not in the forced trade. They act only in open markets.
+213. *(proposed)* **Makers:** about every 3 seconds (at random), each maker replaces its quote in every open market: a bid and an offer a random 1-3 ticks either side of the middle of other people's best bid and offer (the last trade if the book isn't two-sided; no quote while a market has no price at all), size 1-5, rounded outwards to the tick, inside the price limits. It shades the quote 1 tick away from its position for every fifth of max position it holds, and leaves out a side it has no room for.
+214. *(proposed)* **Takers:** about every 4 seconds (at random), each taker picks a random open market and side and buys at the best offer or sells at the best bid, size 1-3. Noise flow: it gives makers and students something to trade against.
+215. *(proposed)* Bots follow every rule (tick size, max position, price limits, no trading with themselves).
+216. *(proposed)* The first "on" brings the bots in (even if joining is locked). "Off" cancels their resting orders; they stay in the game with their positions, and "on" again reuses them. Nobody can take a bot's name or rejoin as a bot. The admin can rename or remove a bot like any trader.
+217. *(proposed)* Each bot decision is logged as ordinary orders (plus `BotsStarted`/`BotsStopped` for the switches), so replay never runs a bot.
+218. *(proposed)* **Reset turns both switches off**; the new game has no bots until they are turned on again.
+
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.
 2. FastAPI server, WebSockets, join with name + room code, and a minimal trader UI for one market in continuous trading.

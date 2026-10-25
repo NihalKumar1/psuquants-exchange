@@ -28,6 +28,8 @@ class MarketCreated(Event):
     forced_trade_size: int
     forced_trade_seconds: int
     dollars_per_point: float = 1  # 1 in logs saved before multipliers existed
+    min_price: int | None = None  # price limits (None = none, as in logs saved before them)
+    max_price: int | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -40,6 +42,8 @@ class MarketEdited(Event):
     forced_trade_size: int
     forced_trade_seconds: int
     dollars_per_point: float = 1
+    min_price: int | None = None
+    max_price: int | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -135,6 +139,22 @@ class TraderJoined(Event):
 
     trader_id: str
     name: str
+    bot: str | None = None  # "maker" or "taker" for a bot (SPEC Q209); None for a student
+
+
+@dataclass(frozen=True, kw_only=True)
+class BotsStarted(Event):
+    """The admin turned on the makers or the takers (SPEC Q209-Q218)."""
+
+    kind: str  # "maker" or "taker"
+
+
+@dataclass(frozen=True, kw_only=True)
+class BotsStopped(Event):
+    """The admin turned the makers or the takers off. Their resting orders were cancelled just
+    before this (OrderCancelled events)."""
+
+    kind: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -274,6 +294,8 @@ EVENT_TYPES = {
         SideAssigned,
         InfoDropMarked,
         TraderJoined,
+        BotsStarted,
+        BotsStopped,
         TraderKicked,
         TraderRenamed,
         JoiningLocked,

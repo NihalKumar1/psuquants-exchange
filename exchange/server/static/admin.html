@@ -55,6 +55,10 @@
             <label>Forced-trade timer (s) <input id="f-forced-seconds" type="number" min="1" step="1" required></label>
             <label title="Contract multiplier: PnL in dollars = PnL in points × this. Pick it so a typical miss costs about the same in every market (e.g. 0.01 for a ~100,000 market, 0.2 for a ~7,000 one).">$ per point
               <input id="f-dollars" type="number" min="0" step="any" value="1" required></label>
+            <label title="Optional: no bid, offer or quote may be priced below this. Blank = no limit.">Min price
+              <input id="f-min-price" type="number" step="1" placeholder="none"></label>
+            <label title="Optional: no bid, offer or quote may be priced above this. Blank = no limit.">Max price
+              <input id="f-max-price" type="number" step="1" placeholder="none"></label>
           </div>
           <div class="form-buttons">
             <button id="market-submit" type="submit" class="primary">Create market</button>
@@ -70,6 +74,22 @@
           <button type="submit" class="primary">Set</button>
         </form>
         <p class="hint">Everyone's equity is this plus their total PnL in dollars (each market's PnL × its $ per point).</p>
+      </section>
+
+      <!-- Maker and taker bots (SPEC Q209-Q218): ordinary traders the server runs. -->
+      <section class="panel">
+        <h2>Bots</h2>
+        <div class="bot-row">
+          <div><b>Makers</b> <span id="makers-status" class="muted"></span>
+            <p class="hint">2 bots keep a bid and an offer around the middle of the market in every open market.</p></div>
+          <button id="toggle-makers" type="button" class="ghost"></button>
+        </div>
+        <div class="bot-row">
+          <div><b>Takers</b> <span id="takers-status" class="muted"></span>
+            <p class="hint">3 bots now and then buy the best offer or sell the best bid.</p></div>
+          <button id="toggle-takers" type="button" class="ghost"></button>
+        </div>
+        <p class="hint">They see only what students see (never the true value), follow every rule, sit out Trade or Tighten, and show in every table and the leaderboard with their PnL.</p>
       </section>
 
       <section class="panel">
@@ -93,7 +113,7 @@
           <table id="markets">
             <thead>
               <tr>
-                <th>Market</th><th>Status</th><th class="num">Tick</th><th class="num">Max pos</th><th class="num">$/pt</th>
+                <th>Market</th><th>Status</th><th class="num">Tick</th><th class="num">Max pos</th><th class="num">$/pt</th><th class="num">Range</th>
                 <th class="num">Bid</th><th class="num">Offer</th><th class="num">Last</th>
                 <th class="num">Mark</th><th>Actions</th>
               </tr>

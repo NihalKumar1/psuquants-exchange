@@ -44,6 +44,9 @@ class MarketConfig:
     # E-mini's $50 per index point). It lets markets priced near 7,000 and near 120,000 count
     # comparably in total PnL and equity (SPEC Q144).
     dollars_per_point: float = 1
+    # Optional price limits (SPEC Q204): no order may be priced outside them. None = no limit.
+    min_price: int | None = None
+    max_price: int | None = None
 
 
 @dataclass(eq=False)  # eq=False: two orders are the same only if they are the same object

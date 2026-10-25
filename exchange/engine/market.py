@@ -95,6 +95,18 @@ class Market:
         )
         return self.config.max_position - exposure - resting
 
+    def price_limit_refusal(self, prices, noun="price"):
+        """Why these prices are outside the market's price limits, or None if they are fine."""
+        low, high = self.config.min_price, self.config.max_price
+        if all((low is None or price >= low) and (high is None or price <= high)
+               for price in prices):
+            return None
+        if low is not None and high is not None:
+            return f"{noun} must be between {low} and {high}"
+        if low is not None:
+            return f"{noun} must be at least {low}"
+        return f"{noun} must be at most {high}"
+
     def best_width(self):
         """(trader_id, width) for the narrowest width in the auction, or None if there is none."""
         if not self.widths:
@@ -126,6 +138,9 @@ class Market:
             return reject("size must be a whole number of at least 1")
         if not is_whole_number(price) or price % self.config.tick_size != 0:
             return reject(f"price must be a multiple of the tick size ({self.config.tick_size})")
+        out_of_range = self.price_limit_refusal([price])
+        if out_of_range:
+            return reject(out_of_range)
 
         matches = self.book.orders_to_match(side, price)
         if kind == "take" and not matches:
@@ -292,6 +307,8 @@ class Market:
             reason = "you already quoted, and the first quote is final"
         elif not on_tick:
             reason = f"prices must be multiples of the tick size ({tick})"
+        elif self.price_limit_refusal([bid, ask], noun="prices"):
+            reason = self.price_limit_refusal([bid, ask], noun="prices")
         elif bid > ask:
             reason = "bid can't be above the offer"
         elif ask - bid > self.mm_width:
@@ -368,6 +385,7 @@ class Market:
                 max_position=event.max_position, forced_trade_size=event.forced_trade_size,
                 forced_trade_seconds=event.forced_trade_seconds,
                 dollars_per_point=event.dollars_per_point,
+                min_price=event.min_price, max_price=event.max_price,
             )
         elif isinstance(event, MarketOpened):
             self.status = MarketStatus.OPEN
