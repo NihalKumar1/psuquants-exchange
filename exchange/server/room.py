@@ -14,7 +14,14 @@ Nothing here knows about WebSockets: a "connection" is whatever object the calle
 
 import secrets
 
-from exchange.engine import Exchange, MarketConfig, Side, StartingEquitySet, TraderJoined
+from exchange.engine import (
+    Exchange,
+    MarketConfig,
+    RoundConfig,
+    Side,
+    StartingEquitySet,
+    TraderJoined,
+)
 
 
 def new_room_code():
@@ -222,6 +229,19 @@ class Room:
             return exchange.lock_joining()
         if kind == "unlock_joining":
             return exchange.unlock_joining()
+        # Delta-hedging rounds (SPEC Q160-Q195)
+        if kind == "create_round":
+            return exchange.create_round(round_config(message))
+        if kind == "start_round":
+            return exchange.start_round(message["round_id"])
+        if kind == "halt_round":
+            return exchange.halt_round(message["round_id"])
+        if kind == "resume_round":
+            return exchange.resume_round(message["round_id"])
+        if kind == "show_greeks":
+            return exchange.show_greeks()
+        if kind == "hide_greeks":
+            return exchange.hide_greeks()
         raise ValueError(f"unknown command {kind!r}")
 
 
@@ -236,4 +256,23 @@ def market_config(market_id, message):
         forced_trade_size=message["forced_trade_size"],
         forced_trade_seconds=message["forced_trade_seconds"],
         dollars_per_point=message.get("dollars_per_point", 1),
+    )
+
+
+def round_config(message):
+    """A delta-hedging round's settings from an admin message. Vols are fractions (0.2 for
+    20%); options are [{"kind": "call", "strike": 100}, ...]."""
+    return RoundConfig(
+        round_id=message["round_id"],
+        title=message["title"],
+        start_price=message["start_price"],
+        tick_size=message["tick_size"],
+        realized_vol=message["realized_vol"],
+        implied_vol=message["implied_vol"],
+        minutes=message["minutes"],
+        options=tuple((option["kind"], option["strike"]) for option in message["options"]),
+        max_position=message["max_position"],
+        dollars_per_point=message["dollars_per_point"],
+        house_half_spread=message["house_half_spread"],
+        house_size=message["house_size"],
     )

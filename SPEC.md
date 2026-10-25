@@ -362,6 +362,13 @@ Chosen while building milestone 8 step 2 (the house), all *(proposed)*:
 189. *(proposed)* While a round is **halted**, the house's quotes stay in the book (nothing can trade). On **resume** it re-quotes everything at once. After the last move it **stops quoting**; its orders stay in the settled books like everyone's.
 190. *(proposed)* Each move's random draw (the number of standard deviations) is logged in `UnderlyingMoved` beside the new price, so the review and the export can say "a 3-standard-deviation move".
 
+Chosen while building milestone 8 step 3 (the server), all *(proposed)*:
+191. *(proposed)* **Traders are never sent the realized vol**, only the implied vol (the instructor can announce the realized vol out loud). The admin sees both.
+192. *(proposed)* A trader's **own net delta, net gamma and hedging error** are also sent only **while greeks are shown**. With greeks hidden, a live hedging error would give the delta away.
+193. *(proposed)* The house appears as **"House"** in the book and on the tape, but **not in the positions table, the admin's trader list or the leaderboard**. The admin page shows the house's position and PnL in each market and its total ($).
+194. *(proposed)* The admin always sees each option's value and greeks, the realized vol, and **every trader's net delta, gamma and hedging error**.
+195. *(proposed)* The admin's round commands are `create_round` (vols as fractions, e.g. 0.2; options as `[{"kind": "call", "strike": 100}, ...]`), `start_round`, `halt_round`, `resume_round`, `show_greeks` and `hide_greeks`. The time left shown is the **moves left** (one a second). The leaderboard gets a **hedging-error column per round** ("—" for anyone who never held one of its options).
+
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.
 2. FastAPI server, WebSockets, join with name + room code, and a minimal trader UI for one market in continuous trading.

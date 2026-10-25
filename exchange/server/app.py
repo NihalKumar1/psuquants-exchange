@@ -37,6 +37,10 @@ whole game as a zip (see export.py).
 
 The forced-trade timer also lives here: when the admin starts a forced-trade window, the server
 waits out the timer and then ends the window itself, as if it were one more command.
+
+So does each delta-hedging round's clock (SPEC Q169, Q171): while a round is running, the
+server moves its underlying one step every round_interval seconds (1 s), as one more command.
+Halting or resetting stops the clock; resuming starts it again.
 """
 
 import asyncio
@@ -56,6 +60,9 @@ from exchange.engine import (
     JoiningUnlocked,
     MarketStatus,
     Rejected,
+    RoundHalted,
+    RoundResumed,
+    RoundStarted,
     TraderKicked,
 )
 
@@ -74,9 +81,10 @@ NO_CACHE = {"Cache-Control": "no-cache"}
 ADMIN_ONLY_EVENTS = (InfoDropMarked, JoiningLocked, JoiningUnlocked)
 
 
-def create_app(room, admin_secret, review_interval=1.0):
+def create_app(room, admin_secret, review_interval=1.0, round_interval=1.0):
     # Running tasks, kept here so they aren't garbage collected:
     timers = set()  # forced-trade timers
+    round_clocks = {}  # round_id -> the task moving that round's price (only while running)
     review_pushes = set()  # a scheduled push to the review pages (at most one at a time)
     review_push_pending = False
     last_review_push = 0.0  # event loop time of the last push
@@ -84,7 +92,8 @@ def create_app(room, admin_secret, review_interval=1.0):
     @asynccontextmanager
     async def lifespan(app):
         yield
-        for task in list(timers | review_pushes):  # the server is stopping: leave nothing behind
+        # The server is stopping: leave nothing behind.
+        for task in list(timers | review_pushes | set(round_clocks.values())):
             task.cancel()
 
     app = FastAPI(lifespan=lifespan)
@@ -249,6 +258,10 @@ def create_app(room, admin_secret, review_interval=1.0):
                     await remove(event.trader_id)
                 if isinstance(event, ForcedTradeStarted):
                     start_timer(event.market_id)
+                if isinstance(event, (RoundStarted, RoundResumed)):
+                    start_round_clock(event.round_id)
+                if isinstance(event, RoundHalted):
+                    stop_round_clock(event.round_id)
             if any(not isinstance(event, ADMIN_ONLY_EVENTS) for event in events):
                 await broadcast(events)
             await tell_admins()
@@ -259,6 +272,8 @@ def create_app(room, admin_secret, review_interval=1.0):
         # Market ids start again at m1, so an old timer must not end the new game's window.
         for timer in list(timers):
             timer.cancel()
+        for round_id in list(round_clocks):
+            stop_round_clock(round_id)
         for trader_id, token in room.reset():
             connection = room.connections[trader_id]
             delivered = (await send(connection, welcome_message(trader_id, token))
@@ -284,6 +299,35 @@ def create_app(room, admin_secret, review_interval=1.0):
             events = room.exchange.end_forced_trade(market_id, ended_by="timer")
             await broadcast(events)
             await tell_admins()
+
+    def start_round_clock(round_id):
+        clock = asyncio.create_task(move_round_price(round_id))
+        round_clocks[round_id] = clock
+        clock.add_done_callback(lambda task: forget_round_clock(round_id, task))
+
+    def stop_round_clock(round_id):
+        clock = round_clocks.pop(round_id, None)
+        if clock is not None:
+            clock.cancel()
+
+    def forget_round_clock(round_id, task):
+        if round_clocks.get(round_id) is task:  # not a newer clock started by a resume
+            del round_clocks[round_id]
+
+    async def move_round_price(round_id):
+        """Move the price once per round_interval until the round stops running (halted, or
+        settled by its last move)."""
+        while True:
+            await asyncio.sleep(round_interval)
+            async with lock:
+                round_ = room.exchange.rounds.get(round_id)
+                if round_ is None or round_.status != "running":
+                    return
+                events = room.exchange.step_round(round_id)
+                await broadcast(events)
+                await tell_admins()
+                if round_.status != "running":
+                    return
 
     async def remove(trader_id):
         """Tell a kicked trader's browser, then close it."""

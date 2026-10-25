@@ -11,6 +11,7 @@ Four kinds of view:
 """
 
 from exchange.engine import MarketStatus, Side, TradeExecuted
+from exchange.engine.house import HOUSE_ID, HOUSE_NAME
 from exchange.engine.review import total_edge, trader_fills
 
 BOOK_DEPTH = 10         # price levels shown on each side of the book...
@@ -22,6 +23,8 @@ RUNNING = (*TRADE_OR_TIGHTEN, MarketStatus.OPEN, MarketStatus.HALTED)
 
 
 def name_of(exchange, trader_id):
+    if trader_id == HOUSE_ID:
+        return HOUSE_NAME
     return exchange.traders.get(trader_id, trader_id)
 
 
@@ -64,6 +67,7 @@ def market_view(exchange, market_id, depth=BOOK_DEPTH):
         "tick_size": market.config.tick_size,
         "max_position": market.config.max_position,
         "dollars_per_point": market.config.dollars_per_point,
+        "round_id": market.config.round_id,  # None unless it is in a delta-hedging round
         "status": market.status.value,
         "bids": levels_view(exchange, market, Side.BUY, depth),
         "asks": levels_view(exchange, market, Side.SELL, depth),
@@ -133,6 +137,68 @@ def trade_view(exchange, trade):
         "seller_id": trade.seller_id,
         "aggressor_side": trade.aggressor_side.value,
         "forced": trade.forced,
+    }
+
+
+# --- Delta-hedging rounds (SPEC Q160-Q195) --------------------------------------------------
+
+
+def round_view(exchange, round_id, with_greeks):
+    """A round's public state: the fair price, the clock and its markets. The option values and
+    greeks are in it only `with_greeks` (for traders: while the admin shows them, Q165). The
+    realized vol is never in it: only the admin knows it (round_admin_view)."""
+    round_ = exchange.rounds[round_id]
+    return {
+        "round_id": round_id,
+        "title": round_.config.title,
+        "status": round_.status,
+        "fair_price": round_.fair_price,
+        "last_draw": round_.last_draw,
+        "step": round_.steps_taken,
+        "total_steps": round_.total_steps,
+        "seconds_left": round_.total_steps - round_.steps_taken,  # one move a second
+        "implied_vol": round_.config.implied_vol,
+        "markets": round_.market_ids,  # the underlying first
+        "options": [
+            {"market_id": market_id, "kind": kind, "strike": strike}
+            for market_id, (kind, strike) in zip(round_.option_ids, round_.config.options)
+        ],
+        "greeks": greeks_view(round_) if with_greeks else None,
+    }
+
+
+def greeks_view(round_):
+    return {
+        market_id: {"value": greeks.value, "delta": greeks.delta, "gamma": greeks.gamma}
+        for market_id in round_.market_ids
+        for greeks in [round_.greeks(market_id)]
+    }
+
+
+def my_round_view(exchange, round_id, trader_id):
+    """One trader's own risk in a round: net delta, net gamma and hedging error (None if they
+    never held an option)."""
+    return {
+        "net_delta": exchange.net_delta(round_id, trader_id),
+        "net_gamma": exchange.net_gamma(round_id, trader_id),
+        "hedging_error": exchange.hedging_error(round_id, trader_id),
+    }
+
+
+def round_admin_view(exchange, round_id):
+    """Everything about a round for the admin page: always with greeks, plus the realized vol
+    and the house's settings, positions and PnL."""
+    round_ = exchange.rounds[round_id]
+    house = {market_id: position_view(exchange.markets[market_id], HOUSE_ID)
+             for market_id in round_.market_ids}
+    house_total = sum(exchange.markets[market_id].pnl(HOUSE_ID).total
+                      for market_id in round_.market_ids) * round_.config.dollars_per_point
+    return {
+        **round_view(exchange, round_id, with_greeks=True),
+        "realized_vol": round_.config.realized_vol,
+        "house_half_spread": round_.config.house_half_spread,
+        "house_size": round_.config.house_size,
+        "house": {"markets": house, "total": cents(house_total)},
     }
 
 
@@ -325,6 +391,17 @@ def state_for(exchange, trader_id):
             for market_id in exchange.markets
         },
         "total": total_view(exchange, trader_id),
+        "greeks_shown": exchange.greeks_shown,
+        "rounds": {
+            round_id: round_view(exchange, round_id, with_greeks=exchange.greeks_shown)
+            for round_id in exchange.rounds
+        },
+        # The trader's own net delta, gamma and hedging error, only while greeks are shown:
+        # with the greeks hidden, working out your delta is part of the exercise.
+        "my_rounds": {
+            round_id: my_round_view(exchange, round_id, trader_id)
+            for round_id in exchange.rounds
+        } if exchange.greeks_shown else {},
     }
 
 
@@ -340,6 +417,8 @@ def admin_message(room):
         "room_code": room.code,
         "joining_locked": exchange.joining_locked,
         "starting_equity": exchange.starting_equity,
+        "greeks_shown": exchange.greeks_shown,
+        "rounds": {round_id: round_admin_view(exchange, round_id) for round_id in exchange.rounds},
         "unexported": room.has_unexported_changes(),  # Reset warns if this is True
         "info_drops": [
             {"time": drop.ts.isoformat(), "note": drop.note} for drop in exchange.info_drops
@@ -364,6 +443,8 @@ def admin_message(room):
                     for market_id, market in exchange.markets.items()
                 },
                 "total": total_view(exchange, trader_id),
+                "rounds": {round_id: my_round_view(exchange, round_id, trader_id)
+                           for round_id in exchange.rounds},
             }
             for trader_id, name in exchange.traders.items()
         ],
@@ -414,6 +495,10 @@ def leaderboard_view(exchange):
             "total_pnl": cents(exchange.total_pnl(trader_id).total),
             "markets": {market_id: exchange.markets[market_id].pnl(trader_id).total
                         for market_id in market_ids},
+            # Each round's hedging error (avg |net delta|, Q166); None if they never held an
+            # option in it.
+            "hedging_errors": {round_id: exchange.hedging_error(round_id, trader_id)
+                               for round_id in exchange.rounds},
         }
         for trader_id, name in exchange.traders.items()
     ]
@@ -427,6 +512,8 @@ def leaderboard_view(exchange):
              "dollars_per_point": exchange.markets[market_id].config.dollars_per_point}
             for market_id in market_ids
         ],
+        "rounds": [{"round_id": round_id, "title": round_.config.title}
+                   for round_id, round_ in exchange.rounds.items()],
         "rows": rows,
     }
 

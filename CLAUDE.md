@@ -71,7 +71,10 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   and logged as `UnderlyingMoved`, and the last move settles the round. `engine/options.py` is
   Black–Scholes (vol over the whole round, time = fraction of moves left). `net_delta`,
   `net_gamma` and `hedging_error` (avg |net delta| carried into each move) are per round.
-  `Exchange.greeks_shown` is the admin's Show/Hide greeks toggle.
+  `Exchange.greeks_shown` is the admin's Show/Hide greeks toggle. `engine/house.py` is the house
+  market maker's pricing (`HOUSE_ID = "house"`, not in `Exchange.traders`); `Exchange` re-quotes
+  for it after each move, each fill against it and on resume (`limited=False` skips its max
+  position).
 - `exchange/server/room.py`: room code, join/rejoin tokens, live trader and admin connections,
   trader + admin commands, and `reset()` (new empty game, same code; connected traders are
   carried over with **new ids and tokens**, so the socket loop looks up `trader_of(connection)`
@@ -90,11 +93,16 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   everyone (used by the load test to time commands; browsers never send it). A `rejected` reply
   carries the command's `market_id`, `kind` and `side`, so the trader page can outline the form
   that sent it.
+  Each running delta-hedging round has a clock task (`round_clocks`) that calls `step_round`
+  every `round_interval` (1 s); halt and Reset cancel it, resume starts a new one.
   The review page is on `/review/ws` (admin password, then `review_pick`); its live pushes are
   throttled to one per `review_interval` (1 s). Every `review_state` also carries the
   `leaderboard` (`views.leaderboard_view`: everyone ranked by equity, ties share a rank, SPEC
   Q153–Q158); it goes only to the review page, never to traders (Q10). `GET /admin/export` (password in the
   `X-Admin-Secret` header) downloads the zip; the room remembers the export so Reset can warn.
+  Rounds in views: every update has `rounds` (`round_view`: fair price, moves left, options;
+  `greeks` only while shown) and `my_rounds` (own net delta/gamma/hedging error, only while
+  shown). The realized vol is admin-only (`round_admin_view`, with the house's PnL).
 - `exchange/server/export.py`: the export zip (trades/orders/events CSVs + events.json), with US
   Eastern times and names in place of trader ids. Needs `tzdata` on Windows.
 - `exchange/server/main.py`: the app uvicorn runs (`build_app(environ)` reads `ADMIN_SECRET`).
