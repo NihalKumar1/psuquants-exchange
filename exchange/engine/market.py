@@ -108,11 +108,12 @@ class Market:
     # --- Decide: command -> events ---------------------------------------------------------
 
     def decide_order(self, trader_id, kind, side, price, size, order_id, trade_id,
-                     replaces=None):
+                     replaces=None, limited=True):
         """A limit order ("limit") or a click on the best bid/offer ("take").
 
         `replaces` is the resting order an amend is replacing: it is about to be cancelled, so
-        its size doesn't count against max position.
+        its size doesn't count against max position. `limited=False` skips max position (only
+        for the house in a delta-hedging round, SPEC Q172).
         """
         command = f"{kind} {side.value} {size} @ {price}"
 
@@ -131,7 +132,7 @@ class Market:
         if kind == "take" and not matches:
             return reject("nothing to take at this price or better")
 
-        room = self.room(trader_id, side)
+        room = self.room(trader_id, side) if limited else size
         if replaces is not None:
             room += self.orders[replaces].remaining
         accepted = min(size, room)

@@ -65,6 +65,13 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   Money (SPEC Q144–Q152): each market's PnL is in points; `MarketConfig.dollars_per_point` is
   its contract multiplier. `Exchange.total_pnl` adds up PnL × multiplier (dollars) and
   `Exchange.equity` = `starting_equity` (admin-set, default $100,000) + that total. Score only.
+  Delta-hedging rounds (SPEC Q160–Q185): `engine/delta_round.py` (`RoundConfig`, `DeltaRound`)
+  ties an underlying market and its option markets together (`MarketConfig.round_id`). The
+  server calls `Exchange.step_round` once a second; each GBM move is drawn from `Exchange.rng`
+  and logged as `UnderlyingMoved`, and the last move settles the round. `engine/options.py` is
+  Black–Scholes (vol over the whole round, time = fraction of moves left). `net_delta`,
+  `net_gamma` and `hedging_error` (avg |net delta| carried into each move) are per round.
+  `Exchange.greeks_shown` is the admin's Show/Hide greeks toggle.
 - `exchange/server/room.py`: room code, join/rejoin tokens, live trader and admin connections,
   trader + admin commands, and `reset()` (new empty game, same code; connected traders are
   carried over with **new ids and tokens**, so the socket loop looks up `trader_of(connection)`

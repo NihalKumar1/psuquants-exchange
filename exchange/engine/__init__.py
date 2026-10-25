@@ -6,6 +6,8 @@ from .events import (
     Event,
     ForcedTradeEnded,
     ForcedTradeStarted,
+    GreeksHidden,
+    GreeksShown,
     InfoDropMarked,
     JoiningLocked,
     JoiningUnlocked,
@@ -22,6 +24,11 @@ from .events import (
     OrderReduced,
     OrderRested,
     Rejected,
+    RoundCreated,
+    RoundHalted,
+    RoundResumed,
+    RoundSettled,
+    RoundStarted,
     SideAssigned,
     SideChosen,
     StartingEquitySet,
@@ -30,11 +37,13 @@ from .events import (
     TraderJoined,
     TraderKicked,
     TraderRenamed,
+    UnderlyingMoved,
     WidthsWithdrawn,
     WidthSubmitted,
     from_dict,
     to_dict,
 )
+from .delta_round import DeltaRound, RoundConfig
 from .exchange import MAX_NAME_LENGTH, Exchange
 from .market import Market
 from .models import MarketConfig, MarketStatus, Order, PricePoint, Side

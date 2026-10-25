@@ -160,6 +160,7 @@ def events_table(exchange):
             f"{key}={'' if value is None else value}"
             for key, value in data.items()
             if key not in ("seq", "ts", "type", "market_id", "trader_id")
+            and not (key == "round_id" and value is None)  # ordinary markets are in no round
         )
         rows.append([event.seq, csv_time(event.ts), data["type"], event.market_id or "",
                      title_of(exchange, event.market_id), data.get("trader_id", ""), details])

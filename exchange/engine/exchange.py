@@ -13,9 +13,14 @@ import random
 from dataclasses import replace
 from datetime import datetime, timezone
 
+from .delta_round import DeltaRound, RoundConfig, check_round_settings, round_markets
+from .house import HOUSE_ID, house_quote
 from .events import (
+    ROUND_EVENTS,
     AuctionStarted,
     ForcedTradeStarted,
+    GreeksHidden,
+    GreeksShown,
     InfoDropMarked,
     JoiningLocked,
     JoiningUnlocked,
@@ -28,6 +33,7 @@ from .events import (
     MarketSettled,
     OrderAccepted,
     Rejected,
+    RoundCreated,
     StartingEquitySet,
     TradeExecuted,
     TraderJoined,
@@ -50,11 +56,14 @@ def utc_now():
 class Exchange:
     def __init__(self, clock=utc_now, rng=None):
         self.clock = clock
-        # Flips the coin for traders who don't choose in a forced trade. Replay never uses it:
-        # each flip is recorded in the log as a SideAssigned event.
+        # Flips the coin for traders who don't choose in a forced trade, and draws each move of
+        # a round's underlying. Replay never uses it: each flip is recorded in the log as a
+        # SideAssigned event and each move as an UnderlyingMoved event.
         self.rng = random.Random() if rng is None else rng
         self.events = []
         self.markets = {}  # market_id -> Market
+        self.rounds = {}  # round_id -> DeltaRound (its markets are in self.markets too)
+        self.greeks_shown = False  # the admin's Show/Hide greeks toggle (SPEC Q165)
         self.traders = {}  # trader_id -> display name, in the order they joined
         self.kicked = set()  # trader_ids the admin removed (they stay in self.traders)
         self.info_drops = []  # InfoDropMarked events, oldest first
@@ -83,6 +92,7 @@ class Exchange:
 
     def edit_market(self, config):
         """Change the settings of a market that hasn't opened yet."""
+        self._check_not_in_round(config.market_id)
         self._check_status(config.market_id, {MarketStatus.CREATED},
                            "a market can be edited only before it opens")
         settings = check_settings(config)
@@ -90,19 +100,23 @@ class Exchange:
 
     def open_market(self, market_id):
         """Start continuous trading directly (skipping Trade or Tighten)."""
+        self._check_not_in_round(market_id)
         self._check_status(market_id, {MarketStatus.CREATED}, "cannot open")
         return self._record([MarketOpened(market_id=market_id)])
 
     def halt_market(self, market_id):
+        self._check_not_in_round(market_id)
         self._check_status(market_id, {MarketStatus.OPEN}, "cannot halt")
         return self._record([MarketHalted(market_id=market_id)])
 
     def resume_market(self, market_id):
+        self._check_not_in_round(market_id)
         self._check_status(market_id, {MarketStatus.HALTED}, "cannot resume")
         return self._record([MarketResumed(market_id=market_id)])
 
     def settle_market(self, market_id, value):
         """Reveal the true value. It can be any whole number, even one off the tick."""
+        self._check_not_in_round(market_id)
         self._check_status(market_id, {MarketStatus.OPEN, MarketStatus.HALTED}, "cannot settle")
         if not is_whole_number(value):
             raise ValueError("the settlement value must be a whole number")
@@ -153,11 +167,117 @@ class Exchange:
             raise ValueError("joining is already unlocked")
         return self._record([JoiningUnlocked()])
 
+    def show_greeks(self):
+        if self.greeks_shown:
+            raise ValueError("the greeks are already shown")
+        return self._record([GreeksShown()])
+
+    def hide_greeks(self):
+        if not self.greeks_shown:
+            raise ValueError("the greeks are already hidden")
+        return self._record([GreeksHidden()])
+
+    # --- Delta-hedging rounds: admin commands (SPEC Q160-Q185) ----------------------------
+    # created -> running <-> halted -> settled. The server calls step_round once a second.
+
+    def create_round(self, config):
+        """An underlying plus one market per option, all in CREATED until the round starts."""
+        check_round_settings(config)
+        config = replace(config, title=config.title.strip())
+        created = round_markets(config)
+        for event in created:
+            if event.market_id in self.markets:
+                raise ValueError(f"market {event.market_id!r} already exists")
+        return self._record([RoundCreated(**vars(config)), *created])
+
+    def start_round(self, round_id):
+        """Open every market in the round, and the house quotes in each. The server starts
+        moving the price."""
+        self._check_round(round_id, {"created"}, "cannot start")
+        round_ = self.rounds[round_id]
+        events = self._record(round_.decide_start())
+        return events + self._house_requote(round_id, round_.market_ids)
+
+    def halt_round(self, round_id):
+        """Stop the price, the clock and trading in all of the round's markets. The house's
+        quotes stay in the book (they can't trade while halted)."""
+        self._check_round(round_id, {"running"}, "cannot halt")
+        return self._record(self.rounds[round_id].decide_halt())
+
+    def resume_round(self, round_id):
+        """Reopen the round's markets; the house re-quotes in each."""
+        self._check_round(round_id, {"halted"}, "cannot resume")
+        round_ = self.rounds[round_id]
+        events = self._record(round_.decide_resume())
+        return events + self._house_requote(round_id, round_.market_ids)
+
+    def step_round(self, round_id):
+        """Move the underlying one random step, and the house re-quotes every market around
+        the new fair prices. The last step settles the whole round instead."""
+        self._check_round(round_id, {"running"}, "the price cannot move")
+        round_ = self.rounds[round_id]
+        events = self._record(round_.decide_step(self.rng))
+        if round_.status == "running":
+            events += self._house_requote(round_id, round_.market_ids)
+        return events
+
+    def _house_requote(self, round_id, market_ids):
+        """The house cancels its quotes in these markets and quotes afresh around fair
+        (SPEC Q172-Q173). A new quote that crosses a student's stale order trades with it."""
+        round_ = self.rounds[round_id]
+        config = round_.config
+        events = []
+        for market_id in market_ids:
+            market = self.markets[market_id]
+            # Cancel first, so the new quote can't run into the house's own old one.
+            events += self._record(market.decide_cancel_all(HOUSE_ID, reason="house re-quote"))
+            bid, ask = house_quote(round_.greeks(market_id).value, config.house_half_spread,
+                                   config.house_size, config.tick_size,
+                                   position=market.position(HOUSE_ID).size,
+                                   speed=round_.last_draw)
+            for side, price in ((Side.BUY, bid), (Side.SELL, ask)):
+                if price is not None:
+                    events += self._record(market.decide_order(
+                        HOUSE_ID, "limit", side, price, config.house_size,
+                        order_id=self.next_order_id, trade_id=self.next_trade_id,
+                        limited=False,
+                    ))
+        return events
+
+    def _requote_if_house_traded(self, market_id, events):
+        """After a student's command: if it traded with the house in a running round, the
+        house re-quotes that market at once (its position changed, so its prices do too)."""
+        market = self.markets.get(market_id)
+        round_id = market.config.round_id if market is not None else None
+        if round_id is None or self.rounds[round_id].status != "running":
+            return events
+        traded_with_house = any(
+            isinstance(event, TradeExecuted) and HOUSE_ID in (event.buyer_id, event.seller_id)
+            for event in events
+        )
+        if not traded_with_house:
+            return events
+        return events + self._house_requote(round_id, [market_id])
+
+    def _check_round(self, round_id, allowed, refusal):
+        round_ = self.rounds.get(round_id)
+        if round_ is None:
+            raise ValueError(f"unknown round {round_id!r}")
+        if round_.status not in allowed:
+            raise ValueError(f"{refusal} (the round is {round_.status})")
+
+    def _check_not_in_round(self, market_id):
+        market = self.markets.get(market_id)
+        if market is not None and market.config.round_id is not None:
+            raise ValueError(f"{market_id} is part of round {market.config.round_id}: "
+                             "use the round's controls")
+
     # --- Trade or Tighten: admin commands --------------------------------------------------
     # CREATED -> AUCTION -> MM_QUOTING -> FORCED_TRADE -> OPEN (or open_market to skip it all)
 
     def start_auction(self, market_id):
         """Start Trade or Tighten: traders may now submit widths."""
+        self._check_not_in_round(market_id)
         self._check_status(market_id, {MarketStatus.CREATED}, "cannot start the auction")
         return self._record([AuctionStarted(market_id=market_id)])
 
@@ -277,10 +397,11 @@ class Exchange:
         if refusal:
             return self._reject(market_id, trader_id, f"amend {order_id} to {size} @ {price}",
                                 refusal)
-        return self._record(self.markets[market_id].decide_amend(
+        events = self._record(self.markets[market_id].decide_amend(
             trader_id, order_id, price, size,
             new_order_id=self.next_order_id, trade_id=self.next_trade_id,
         ))
+        return self._requote_if_house_traded(market_id, events)
 
     def cancel_all(self, trader_id, market_id=None):
         """Cancel the trader's resting orders in one market, or in every market if None."""
@@ -304,7 +425,7 @@ class Exchange:
             return self._reject(market_id, trader_id, command, "unknown market")
         events = market.decide_order(trader_id, kind, side, price, size,
                                      order_id=self.next_order_id, trade_id=self.next_trade_id)
-        return self._record(events)
+        return self._requote_if_house_traded(market_id, self._record(events))
 
     # --- Trade or Tighten: trader commands -------------------------------------------------
 
@@ -360,9 +481,19 @@ class Exchange:
                 market_id=event.market_id, title=event.title, tick_size=event.tick_size,
                 max_position=event.max_position, forced_trade_size=event.forced_trade_size,
                 forced_trade_seconds=event.forced_trade_seconds,
-                dollars_per_point=event.dollars_per_point,
+                dollars_per_point=event.dollars_per_point, round_id=event.round_id,
             )
             self.markets[event.market_id] = Market(config)
+        elif isinstance(event, RoundCreated):
+            settings = {name: value for name, value in vars(event).items()
+                        if name not in ("seq", "ts", "market_id")}
+            self.rounds[event.round_id] = DeltaRound(RoundConfig(**settings), self.markets)
+        elif isinstance(event, ROUND_EVENTS):
+            self.rounds[event.round_id].apply(event)
+        elif isinstance(event, GreeksShown):
+            self.greeks_shown = True
+        elif isinstance(event, GreeksHidden):
+            self.greeks_shown = False
         elif isinstance(event, TraderJoined):
             self.traders[event.trader_id] = event.name
             self.next_trader_id += 1
@@ -412,6 +543,15 @@ class Exchange:
         if market.status is not MarketStatus.FORCED_TRADE:
             return None
         return max(0, (market.forced_trade_deadline() - self.clock()).total_seconds())
+
+    def net_delta(self, round_id, trader_id):
+        return self.rounds[round_id].net_delta(trader_id)
+
+    def net_gamma(self, round_id, trader_id):
+        return self.rounds[round_id].net_gamma(trader_id)
+
+    def hedging_error(self, round_id, trader_id):
+        return self.rounds[round_id].hedging_error(trader_id)
 
     def total_pnl(self, trader_id):
         """PnL in dollars over every market: each market's PnL (in its own price units, or

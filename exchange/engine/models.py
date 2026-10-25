@@ -44,6 +44,9 @@ class MarketConfig:
     # E-mini's $50 per index point). It lets markets priced near 7,000 and near 120,000 count
     # comparably in total PnL and equity (SPEC Q144).
     dollars_per_point: float = 1
+    # The delta-hedging round this market is part of (SPEC Q167), or None for an ordinary
+    # market. A round's markets are opened, halted and settled only through the round.
+    round_id: str | None = None
 
 
 @dataclass(eq=False)  # eq=False: two orders are the same only if they are the same object

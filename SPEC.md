@@ -322,6 +322,46 @@ Markets priced near 7,000 and near 120,000 were added up point for point, so the
 158. **Ties share a rank** (1, 2, 2, 4), listed in name order.
 159. The leaderboard is built in the same PR as the trader features and equity (PR #7).
 
+### Answered while planning the delta-hedging activity (2026-10-25)
+The GBMs will teach delta hedging, so the exchange gets a second kind of game, a **delta-hedging round**. The exec answered the questions below. Details marked *(proposed)* were chosen while planning and await the instructor's review.
+160. A round has one **underlying** whose price **moves at random by itself** (continuous: geometric Brownian motion), plus **options on it** that students trade into and then delta-hedge with the underlying.
+161. Students **start with no position**. They get options exposure by trading the options, against the house or each other.
+162. **The admin picks the options**: any set of calls and puts at chosen strikes, all **European, expiring at the end of the round**.
+163. **Synthetic liquidity:** a **house market maker** always quotes every market in the round, so students no longer have to provide all the liquidity. Its spread **widens when the price is moving fast and when the house is carrying a big position**, so hedging late or in size costs more.
+164. **Two vols, both set by the admin:** the **realized vol** (how much the underlying actually moves) and the house's **implied vol** (what it prices options with, Black–Scholes). When realized > implied, buying options and hedging well makes money (gamma scalping); hedging badly doesn't.
+165. **Admin toggle (Show/Hide greeks).** While it is shown, each trader's page shows each option's **Black–Scholes value and delta**, plus the trader's own **net delta** and **gamma**. While hidden, none of it is sent.
+166. **Scoring:** PnL and equity as now, plus a **hedging error = the time-weighted average of |net delta|** over the round, on the review screen's leaderboard.
+
+Proposed details (await the instructor's review):
+167. *(proposed)* A round is created on the admin page in one form: the underlying's name, starting price, tick size, realized vol, implied vol, round length (minutes), the list of options (call/put + strike), the max position, the $ per point, and the house's base spread and size. It creates one market for the underlying and one per option (ids like `SPX`, `SPX-C-100`), all linked to the round. One $ per point for the whole round, so 1 option = 1 unit of underlying and deltas add up.
+168. *(proposed)* **Vol is "over the whole round"**: a realized vol of 20% means the log price at expiry has a standard deviation of 20% from the start. Black–Scholes uses the fraction of the round left as its time (no interest rate, no dividends).
+169. *(proposed)* The underlying **moves once a second**. Each move is drawn by the server and **logged as an `UnderlyingMoved` event** (the new fair price), so replay never draws a random number (like `SideAssigned`). The fair price is kept with decimals; quotes and settlement are rounded to the tick.
+170. *(proposed)* The fair price of the underlying is **public** (shown on every trader's page and the review chart), as on a real screen. Only the option values and greeks depend on the toggle.
+171. *(proposed)* The admin **starts** the round (the clock and the house begin), can **halt / resume** it (halting pauses the price, the clock and the house, and stops trading in all the round's markets), and the round **settles itself at expiry**: the underlying at its final price, each call at max(S − K, 0) and each put at max(K − S, 0).
+172. *(proposed)* **The house** is a trader named "House" that is not a student: it is not in the leaderboard or the hedging error, it has **no max position**, and the admin sees its position and PnL. In each market it keeps **one bid and one offer** of the admin's size around fair (the price for the underlying, Black–Scholes at implied vol for an option). It re-quotes **after every move and after every fill against it**.
+173. *(proposed)* **Widening rule:** half-spread = base half-spread × max(1, |last move| ÷ typical move) × (1 + |house position| ÷ (4 × quote size)), rounded out to the tick. ("|last move| ÷ typical move" is the move's random draw, in standard deviations. *Corrected while building step 2: the first draft said 1 + |last move| ÷ typical move, which triples the spread after a 2× move, contradicting the next sentence.*) A quiet market with a flat house quotes the base spread. A move twice the usual size, or a house position of 4 quote sizes, doubles it. The house also **skews**: it shades both prices away from its position by one tick for every 4 quote sizes it holds.
+174. *(proposed)* Students' orders follow every existing rule (tick size, max position with clipping, no trading with yourself). The mark is unchanged (mid of the book), and with the house always quoting it stays close to fair.
+175. *(proposed)* **Net delta** = underlying position + Σ (option position × option delta), with delta from Black–Scholes at the **implied vol** (the vol everyone is told). Gamma is computed the same way.
+176. *(proposed)* **Hedging error** is sampled at every move, from the round's start to expiry, as |net delta|, then averaged. Students who never held an option show "—" instead of a score, so doing nothing isn't the best score. The leaderboard still ranks by equity, and the hedging error is a column.
+177. *(proposed)* The review screen's chart for the underlying shows the fair price. When a student is picked, a second line shows their net delta over time.
+178. *(proposed)* The export adds the round's settings, every `UnderlyingMoved` event, and each student's hedging error.
+179. *(proposed)* Delta-hedging rounds and ordinary estimation markets can exist in the same game (every data structure stays keyed by market id).
+
+Chosen while building milestone 8 step 1 (the engine), all *(proposed)*:
+180. *(proposed)* The round's name is **letters and digits only** (e.g. `SPX`). It is the underlying's market id, and options are `SPX-C-100` / `SPX-P-95`, titled "S&P 100 call". **All of a round's markets share one tick size**; the starting price, every strike and the house's half-spread must be multiples of it. A round needs **at least one option**, and the same option can't be listed twice.
+181. *(proposed)* A round's markets are **opened, halted, resumed and settled only through the round** (the per-market buttons refuse them: "use the round's controls"), and they can't be edited or run through Trade or Tighten.
+182. *(proposed)* Each move is a GBM step: log price changes by −vol²·dt/2 + vol·√dt·Z, with dt = 1 ÷ total steps and Z a standard normal draw. The −vol²/2 drift keeps the expected price equal to the start. A realized vol of 0 means the price never moves.
+183. *(proposed)* **Time left is counted in moves, not the wall clock** (time left = moves still to come ÷ total moves), so a halt pauses expiry exactly. The last move settles the round: the underlying at its final fair price **rounded to the nearest tick**, each option at its payoff from that settled price.
+184. *(proposed)* **Hedging error detail:** at each move, every trader with a position in the round adds |net delta| as it was **just before the price moved** (the risk they carried into it). The error is that sum ÷ the number of moves so far, so moves before a trader's first trade count as 0. Anyone who has traded an option at least once gets a score, even if they later went flat.
+185. *(proposed)* At expiry a call's delta is 1 above the strike, 0 below it, and ½ exactly at it (a put's is the call's − 1).
+
+Chosen while building milestone 8 step 2 (the house), all *(proposed)*:
+186. *(proposed)* The house uses **one base half-spread and one quote size for every market in the round** (the admin's two numbers), and the speed factor comes from the underlying's last move for the options too. Its inventory factor and skew use **its position in that market**.
+187. *(proposed)* When the house re-quotes it **cancels its old quotes first, then posts the new bid and offer**. If the new quote **crosses a student's resting order, it trades with it** at the student's price: a stale quote gets picked off, as on a real exchange. The house does not re-quote again straight after picking someone off (it re-quotes on the next move, a second later).
+188. *(proposed)* The house **doesn't bid when its bid would be 0 or less** (a nearly worthless option shows only an offer), and its offer is never below one tick.
+189. *(proposed)* While a round is **halted**, the house's quotes stay in the book (nothing can trade). On **resume** it re-quotes everything at once. After the last move it **stops quoting**; its orders stay in the settled books like everyone's.
+190. *(proposed)* Each move's random draw (the number of standard deviations) is logged in `UnderlyingMoved` beside the new price, so the review and the export can say "a 3-standard-deviation move".
+
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.
 2. FastAPI server, WebSockets, join with name + room code, and a minimal trader UI for one market in continuous trading.
@@ -330,3 +370,8 @@ Markets priced near 7,000 and near 120,000 were added up point for point, so the
 5. Multiple concurrent markets in the UI.
 6. Review/projector screen and CSV/JSON export.
 7. 60-bot load test, deploy to Render, and meeting-day checklist in the README.
+8. Delta-hedging round (Q160–Q179), in four steps, each reviewed before the next:
+   1. Engine: round settings, Black–Scholes values and greeks, `UnderlyingMoved` steps, settlement at expiry, net delta and hedging error (pure Python + tests).
+   2. Engine: the house market maker (quotes, widening, skew, re-quoting after fills).
+   3. Server: the round clock (one move a second, pauses on halt), admin commands (create/start/halt/greeks toggle), views.
+   4. Pages: admin round form, trader greeks panel, review chart's net-delta line and hedging-error column, export; the load test with the house quoting.
