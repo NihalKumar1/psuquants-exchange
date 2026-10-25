@@ -6,12 +6,16 @@ as the admin and runs everything itself:
   1. 60 bots join ("Bot 01" ... "Bot 60"), and an admin connection watches throughout.
   2. It creates a market and runs Trade or Tighten: bots bid widths, the winner quotes, and
      about 2/3 of the rest choose a side; the timer assigns the others a random side.
-  3. Continuous trading: each bot acts about once every 2 seconds for 2 minutes (limit orders,
-     two-sided quotes, clicking the best bid/offer, cancels).
-  4. It settles the market and checks the results.
+  3. It creates and starts a 2-minute delta-hedging round (an underlying and four options), so
+     the house quotes every one of its markets and re-quotes them every second.
+  4. Continuous trading: each bot acts about once every 2 seconds for 2 minutes (limit orders,
+     two-sided quotes, clicking the best bid/offer, cancels), each time in a random running
+     market: the Trade or Tighten market or one of the round's (mostly against the house).
+  5. It settles the market, waits for the round to settle itself, and checks the results.
 
 It passes when 95% of commands get their reply within 750 ms, nothing errors or disconnects,
-every forced trade printed, positions add up to 0 and, after settlement, PnL adds up to 0.
+every forced trade printed, positions add up to 0 and, after settlement, PnL adds up to 0 (in
+the round's markets, counting the house). `--round-minutes 0` leaves the round out.
 
 Usage (PowerShell, from the project folder with the venv active):
 
@@ -41,6 +45,7 @@ from dataclasses import dataclass, field
 
 import websockets
 
+HOUSE_ID = "house"  # the house market maker's trader id in delta-hedging rounds
 MAX_P95_MS = 750
 REPLY_TIMEOUT_SECONDS = 30  # a command with no reply after this long counts as an error
 CONNECT_TIMEOUT_SECONDS = 120  # generous: a sleeping Render service takes about a minute to wake
@@ -89,6 +94,12 @@ class Results:
     forced_expected: int = None
     position_sum: int = None
     pnl_sum: float = None
+    # The delta-hedging round (only when the run has one):
+    round_expected: bool = False
+    round_settled: bool = None
+    round_position_sum: int = None  # per market, traders + house, |sum| added over the markets
+    round_pnl_sum: float = None  # traders + house, every market of the round
+    house_trades: int = 0
 
 
 def checks(results):
@@ -96,7 +107,7 @@ def checks(results):
     latencies = results.latencies_ms
     p95 = percentile(latencies, 0.95) if latencies else None
     p95_text = f"{p95:.0f} ms" if p95 is not None else "no commands timed"
-    return [
+    found = [
         (f"p95 round trip under {MAX_P95_MS} ms ({p95_text})",
          p95 is not None and p95 < MAX_P95_MS),
         (f"no errors ({len(results.errors)})", not results.errors),
@@ -109,6 +120,15 @@ def checks(results):
         (f"total PnL sums to 0 after settlement ({results.pnl_sum})",
          results.pnl_sum is not None and abs(results.pnl_sum) < 1e-6),
     ]
+    if results.round_expected:
+        found += [
+            ("the round settled itself at expiry", results.round_settled is True),
+            (f"round positions sum to 0 with the house ({results.round_position_sum})",
+             results.round_position_sum == 0),
+            (f"round PnL sums to 0 with the house ({results.round_pnl_sum})",
+             results.round_pnl_sum is not None and abs(results.round_pnl_sum) < 1e-6),
+        ]
+    return found
 
 
 # --- Connections ----------------------------------------------------------------------------
@@ -164,6 +184,7 @@ class Bot(Connection):
         self.trader_id = None
         self.state = None
         self.forced_trades = Counter()  # market_id -> forced trades seen on the tape
+        self.house_trades = 0  # trades with the house seen on the tape
         self.next_ref = 1
         self.waiting = {}  # ref -> future resolved when "done" arrives
 
@@ -210,6 +231,8 @@ class Bot(Connection):
             for trade in message["new_trades"]:
                 if trade["forced"]:
                     self.forced_trades[trade["market_id"]] += 1
+                if HOUSE_ID in (trade["buyer_id"], trade["seller_id"]):
+                    self.house_trades += 1
         elif kind == "done":
             reply = self.waiting.get(message["ref"])
             if reply is not None and not reply.done():
@@ -301,18 +324,28 @@ async def run(args, secret):
 
         market_id = await create_market(admin, args)
         await trade_or_tighten(admin, bots, market_id, args, rng, results)
+        round_id = None
+        if args.round_minutes > 0:
+            round_id = await start_round(admin, args)
+            results.round_expected = True
 
         print(f"Continuous trading for {args.seconds} s "
               f"(each bot acts about every {args.interval} s)...")
         started = time.monotonic()
         deadline = started + args.seconds
-        await asyncio.gather(*(trade_until(bot, market_id, deadline, args, rng) for bot in bots))
+        await asyncio.gather(*(trade_until(bot, deadline, args, rng) for bot in bots))
         results.trading_seconds = time.monotonic() - started
 
         print(f"Settling at {args.center:,}...")
         await admin.do(lambda state: state["markets"][market_id]["status"] == "settled",
                        type="settle", market_id=market_id, value=args.center)
         record_final_checks(admin, bots, market_id, results)
+        if round_id is not None:
+            print("Waiting for the round to settle itself...")
+            await admin.wait_for(lambda state: state["rounds"][round_id]["status"] == "settled",
+                                 args.round_minutes * 60 + REPLY_TIMEOUT_SECONDS,
+                                 what="round expiry")
+            record_round_checks(admin, bots, round_id, results)
     except RuntimeError as error:
         results.errors.append(str(error))
     finally:
@@ -330,6 +363,23 @@ async def create_market(admin, args):
     (market_id,) = [m_id for m_id, m in admin.state["markets"].items() if m["title"] == title]
     print(f"Created market {market_id}: {title!r}")
     return market_id
+
+
+async def start_round(admin, args):
+    """Create and start a delta-hedging round; the house starts quoting all its markets."""
+    round_id = f"LT{time.strftime('%H%M%S')}"  # letters and digits only, new each run
+    await admin.do(lambda state: round_id in state["rounds"],
+                   type="create_round", round_id=round_id, title="Load test round",
+                   start_price=1000, tick_size=1, realized_vol=0.3, implied_vol=0.2,
+                   minutes=args.round_minutes,
+                   options=[{"kind": "call", "strike": strike} for strike in (950, 1000, 1050)]
+                   + [{"kind": "put", "strike": 1000}],
+                   max_position=50, dollars_per_point=1, house_half_spread=1, house_size=10)
+    await admin.do(lambda state: state["rounds"][round_id]["status"] == "running",
+                   type="start_round", round_id=round_id)
+    print(f"Started round {round_id}: {args.round_minutes} min, the house quoting "
+          f"{len(admin.state['rounds'][round_id]['markets'])} markets")
+    return round_id
 
 
 async def trade_or_tighten(admin, bots, market_id, args, rng, results):
@@ -374,21 +424,25 @@ async def trade_or_tighten(admin, bots, market_id, args, rng, results):
                          what="forced-trade timer")
 
 
-async def trade_until(bot, market_id, deadline, args, rng):
-    """One bot's continuous trading: wait a random while, act, repeat until the deadline."""
+async def trade_until(bot, deadline, args, rng):
+    """One bot's continuous trading: wait a random while, act in a random running market,
+    repeat until the deadline."""
     while bot.connected:
         await asyncio.sleep(rng.uniform(0, 2 * args.interval))
         if time.monotonic() >= deadline:
             return
-        await bot.do(**random_action(bot, market_id, args, rng))
+        running = bot.state["columns"]  # open markets, and halted ones (refusals are normal)
+        if running:
+            await bot.do(**random_action(bot, rng.choice(running), args, rng))
 
 
 def random_action(bot, market_id, args, rng):
-    """One random command, with prices near the current mark."""
+    """One random command, with prices near the current mark (or the one price there is)."""
     market = bot.market(market_id)
     mine = bot.my_orders(market_id)
-    tick = args.tick
-    mark = market["mark"] if market["mark"] is not None else args.center
+    tick = market["tick_size"]
+    mark = next((price for price in (market["mark"], market["best_ask"], market["best_bid"])
+                 if price is not None), args.center)
 
     kind = rng.choices(list(ACTION_MIX), weights=list(ACTION_MIX.values()))[0]
     if kind == "take" and market["best_bid"] is None and market["best_ask"] is None:
@@ -425,8 +479,25 @@ def record_final_checks(admin, bots, market_id, results):
     results.bots_disconnected = [trader["name"] for trader in traders
                                  if trader["name"] in bot_names and not trader["connected"]]
     results.forced_printed = bots[0].forced_trades[market_id]
-    results.position_sum = sum(p["position"] for p in admin.state["markets"][market_id]["positions"])
+    results.position_sum = sum(admin.state["markets"][market_id]["positions"])
     results.pnl_sum = sum(trader["markets"][market_id]["total"] for trader in traders)
+
+
+def record_round_checks(admin, bots, round_id, results):
+    """The round's numbers from the admin state (taken after it settled), counting the house."""
+    round_ = admin.state["rounds"][round_id]
+    traders = admin.state["traders"]
+    house = round_["house"]["markets"]
+    results.round_settled = round_["status"] == "settled"
+    results.round_position_sum = sum(
+        abs(sum(admin.state["markets"][market_id]["positions"])
+            + house[market_id]["position"])
+        for market_id in round_["markets"])
+    traders_pnl = sum(trader["markets"][market_id]["total"]
+                      for trader in traders for market_id in round_["markets"])
+    house_pnl = sum(house[market_id]["total"] for market_id in round_["markets"])
+    results.round_pnl_sum = traders_pnl + house_pnl
+    results.house_trades = bots[0].house_trades
 
 
 # --- Report ---------------------------------------------------------------------------------
@@ -446,6 +517,8 @@ def print_summary(args, results):
               f"(target {args.bots / args.interval:.1f}/s)")
     print("Commands: " + ", ".join(f"{kind} {count:,}"
                                    for kind, count in results.actions.most_common()))
+    if results.round_expected:
+        print(f"Trades with the house (delta-hedging round): {results.house_trades:,}")
     if results.rejections:
         print("Normal refusals (not failures):")
         for reason, count in results.rejections.most_common(10):
@@ -478,6 +551,9 @@ def parse_args(argv):
     parser.add_argument("--tick", type=int, default=100)
     parser.add_argument("--forced-seconds", type=int, default=15,
                         help="the forced-trade timer")
+    parser.add_argument("--round-minutes", type=int, default=2,
+                        help="length of the delta-hedging round run beside the market "
+                             "(0: no round)")
     parser.add_argument("--seed", type=int, default=None, help="repeat the same random choices")
     return parser.parse_args(argv)
 

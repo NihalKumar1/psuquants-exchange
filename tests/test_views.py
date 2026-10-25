@@ -5,6 +5,7 @@ from exchange.server.room import Room
 from exchange.server.views import (
     admin_message,
     market_view,
+    public_update,
     review_message,
     review_options,
     snapshot_message,
@@ -80,8 +81,12 @@ def test_positions_table_lists_every_joined_trader_including_flat_ones(ex):
 
     view = market_view(ex, "cars")
 
-    assert [(row["name"], row["position"]) for row in view["positions"]] == [
-        ("Alice", -4), ("Bob", 4), ("Carol", 0),
+    # Just the numbers, in join order: the update's "traders" list says whose they are (it is
+    # sent once, not once per market, so updates stay small with many markets).
+    assert view["positions"] == [-4, 4, 0]
+    assert update_message(ex, alice, [])["traders"] == [
+        {"trader_id": alice, "name": "Alice"}, {"trader_id": bob, "name": "Bob"},
+        {"trader_id": carol, "name": "Carol"},
     ]
 
 
@@ -678,3 +683,16 @@ def test_the_admin_state_says_whether_the_game_has_unexported_changes(ex):
 
     room.mark_exported()
     assert admin_message(room)["unexported"] is False
+
+
+def test_a_broadcast_can_share_the_public_part_of_every_update(ex):
+    # The server builds the part that is the same for everyone once per broadcast (speed, with
+    # 60 traders and a round's several markets); each trader's update must come out the same.
+    alice, bob = (ex.join(name)[0].trader_id for name in ("Alice", "Bob"))
+    ex.place_limit("cars", bob, SELL, 40, 10)
+    events = ex.take("cars", alice, BUY, 40, 4)
+
+    public = public_update(ex, events)
+
+    for trader_id in (alice, bob):
+        assert update_message(ex, trader_id, events, public) == update_message(ex, trader_id, events)

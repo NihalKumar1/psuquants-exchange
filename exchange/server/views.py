@@ -11,6 +11,7 @@ Four kinds of view:
 """
 
 from exchange.engine import MarketStatus, Side, TradeExecuted
+from exchange.engine.house import HOUSE_ID, HOUSE_NAME
 from exchange.engine.review import total_edge, trader_fills
 
 BOOK_DEPTH = 10         # price levels shown on each side of the book...
@@ -22,6 +23,8 @@ RUNNING = (*TRADE_OR_TIGHTEN, MarketStatus.OPEN, MarketStatus.HALTED)
 
 
 def name_of(exchange, trader_id):
+    if trader_id == HOUSE_ID:
+        return HOUSE_NAME
     return exchange.traders.get(trader_id, trader_id)
 
 
@@ -64,6 +67,7 @@ def market_view(exchange, market_id, depth=BOOK_DEPTH):
         "tick_size": market.config.tick_size,
         "max_position": market.config.max_position,
         "dollars_per_point": market.config.dollars_per_point,
+        "round_id": market.config.round_id,  # None unless it is in a delta-hedging round
         "status": market.status.value,
         "bids": levels_view(exchange, market, Side.BUY, depth),
         "asks": levels_view(exchange, market, Side.SELL, depth),
@@ -72,11 +76,10 @@ def market_view(exchange, market_id, depth=BOOK_DEPTH):
         "last_price": market.last_price,
         "mark": market.mark(),
         "settlement_value": market.settlement_value,
-        # Everyone's position is public; everyone who joined is listed, even at 0.
-        "positions": [
-            {"trader_id": trader_id, "name": name, "position": market.position(trader_id).size}
-            for trader_id, name in exchange.traders.items()
-        ],
+        # Everyone's position is public; everyone who joined is listed, even at 0. Just the
+        # numbers, in join order: whose they are is in the update's "traders" list, sent once
+        # rather than once per market (a round adds several markets to every update).
+        "positions": [market.position(trader_id).size for trader_id in exchange.traders],
         "tot": tot_view(exchange, market),
     }
 
@@ -133,6 +136,68 @@ def trade_view(exchange, trade):
         "seller_id": trade.seller_id,
         "aggressor_side": trade.aggressor_side.value,
         "forced": trade.forced,
+    }
+
+
+# --- Delta-hedging rounds (SPEC Q160-Q195) --------------------------------------------------
+
+
+def round_view(exchange, round_id, with_greeks):
+    """A round's public state: the fair price, the clock and its markets. The option values and
+    greeks are in it only `with_greeks` (for traders: while the admin shows them, Q165). The
+    realized vol is never in it: only the admin knows it (round_admin_view)."""
+    round_ = exchange.rounds[round_id]
+    return {
+        "round_id": round_id,
+        "title": round_.config.title,
+        "status": round_.status,
+        "fair_price": round_.fair_price,
+        "last_draw": round_.last_draw,
+        "step": round_.steps_taken,
+        "total_steps": round_.total_steps,
+        "seconds_left": round_.total_steps - round_.steps_taken,  # one move a second
+        "implied_vol": round_.config.implied_vol,
+        "markets": round_.market_ids,  # the underlying first
+        "options": [
+            {"market_id": market_id, "kind": kind, "strike": strike}
+            for market_id, (kind, strike) in zip(round_.option_ids, round_.config.options)
+        ],
+        "greeks": greeks_view(round_) if with_greeks else None,
+    }
+
+
+def greeks_view(round_):
+    return {
+        market_id: {"value": greeks.value, "delta": greeks.delta, "gamma": greeks.gamma}
+        for market_id in round_.market_ids
+        for greeks in [round_.greeks(market_id)]
+    }
+
+
+def my_round_view(exchange, round_id, trader_id):
+    """One trader's own risk in a round: net delta, net gamma and hedging error (None if they
+    never held an option)."""
+    return {
+        "net_delta": exchange.net_delta(round_id, trader_id),
+        "net_gamma": exchange.net_gamma(round_id, trader_id),
+        "hedging_error": exchange.hedging_error(round_id, trader_id),
+    }
+
+
+def round_admin_view(exchange, round_id):
+    """Everything about a round for the admin page: always with greeks, plus the realized vol
+    and the house's settings, positions and PnL."""
+    round_ = exchange.rounds[round_id]
+    house = {market_id: position_view(exchange.markets[market_id], HOUSE_ID)
+             for market_id in round_.market_ids}
+    house_total = sum(exchange.markets[market_id].pnl(HOUSE_ID).total
+                      for market_id in round_.market_ids) * round_.config.dollars_per_point
+    return {
+        **round_view(exchange, round_id, with_greeks=True),
+        "realized_vol": round_.config.realized_vol,
+        "house_half_spread": round_.config.house_half_spread,
+        "house_size": round_.config.house_size,
+        "house": {"markets": house, "total": cents(house_total)},
     }
 
 
@@ -214,18 +279,29 @@ def snapshot_message(exchange, trader_id):
     }
 
 
-def update_message(exchange, trader_id, events):
+def update_message(exchange, trader_id, events, public=None):
     """Sent after every command: the current state plus only the trades that just happened.
 
-    The full tape is only in the snapshot, so updates stay small as the tape grows.
+    The full tape is only in the snapshot, so updates stay small as the tape grows. A broadcast
+    passes in `public` (public_update), built once for every trader instead of once each.
     """
+    if public is None:
+        public = public_update(exchange, events)
     return {
         "type": "update",
-        **state_for(exchange, trader_id),
+        **state_for(exchange, trader_id, public["state"]),
+        "new_trades": public["new_trades"],
+        "my_fills": my_fills(exchange, trader_id, events),
+    }
+
+
+def public_update(exchange, events):
+    """The part of an update that is the same for every trader."""
+    return {
+        "state": public_state(exchange),
         "new_trades": [
             trade_view(exchange, event) for event in events if isinstance(event, TradeExecuted)
         ],
-        "my_fills": my_fills(exchange, trader_id, events),
     }
 
 
@@ -308,10 +384,35 @@ def position_text(position):
     return "FLAT"
 
 
-def state_for(exchange, trader_id):
-    depth = book_depth(exchange)
+def state_for(exchange, trader_id, public=None):
+    """Everything on one trader's screen: the public part (the same for everyone, so a broadcast
+    builds it once and passes it in as `public`) plus the trader's own orders, PnL and risk."""
+    if public is None:
+        public = public_state(exchange)
     return {
         "name": exchange.traders[trader_id],  # can change if the admin renames them
+        **public,
+        "me": {
+            market_id: trader_view(exchange, market_id, trader_id)
+            for market_id in exchange.markets
+        },
+        "total": total_view(exchange, trader_id),
+        # The trader's own net delta, gamma and hedging error, only while greeks are shown:
+        # with the greeks hidden, working out your delta is part of the exercise.
+        "my_rounds": {
+            round_id: my_round_view(exchange, round_id, trader_id)
+            for round_id in exchange.rounds
+        } if exchange.greeks_shown else {},
+    }
+
+
+def public_state(exchange):
+    """The part of every trader's screen that is the same for everyone."""
+    depth = book_depth(exchange)
+    return {
+        # Everyone who joined, in join order (the order of each market's "positions").
+        "traders": [{"trader_id": trader_id, "name": name}
+                    for trader_id, name in exchange.traders.items()],
         # What the page lays out: one column per running market, and the markets that get a
         # column in the positions table. The page draws exactly this, so the rules live here.
         "columns": running_market_ids(exchange),
@@ -320,11 +421,11 @@ def state_for(exchange, trader_id):
         "markets": {
             market_id: market_view(exchange, market_id, depth) for market_id in exchange.markets
         },
-        "me": {
-            market_id: trader_view(exchange, market_id, trader_id)
-            for market_id in exchange.markets
+        "greeks_shown": exchange.greeks_shown,
+        "rounds": {
+            round_id: round_view(exchange, round_id, with_greeks=exchange.greeks_shown)
+            for round_id in exchange.rounds
         },
-        "total": total_view(exchange, trader_id),
     }
 
 
@@ -340,6 +441,8 @@ def admin_message(room):
         "room_code": room.code,
         "joining_locked": exchange.joining_locked,
         "starting_equity": exchange.starting_equity,
+        "greeks_shown": exchange.greeks_shown,
+        "rounds": {round_id: round_admin_view(exchange, round_id) for round_id in exchange.rounds},
         "unexported": room.has_unexported_changes(),  # Reset warns if this is True
         "info_drops": [
             {"time": drop.ts.isoformat(), "note": drop.note} for drop in exchange.info_drops
@@ -364,6 +467,8 @@ def admin_message(room):
                     for market_id, market in exchange.markets.items()
                 },
                 "total": total_view(exchange, trader_id),
+                "rounds": {round_id: my_round_view(exchange, round_id, trader_id)
+                           for round_id in exchange.rounds},
             }
             for trader_id, name in exchange.traders.items()
         ],
@@ -414,6 +519,10 @@ def leaderboard_view(exchange):
             "total_pnl": cents(exchange.total_pnl(trader_id).total),
             "markets": {market_id: exchange.markets[market_id].pnl(trader_id).total
                         for market_id in market_ids},
+            # Each round's hedging error (avg |net delta|, Q166); None if they never held an
+            # option in it.
+            "hedging_errors": {round_id: exchange.hedging_error(round_id, trader_id)
+                               for round_id in exchange.rounds},
         }
         for trader_id, name in exchange.traders.items()
     ]
@@ -427,6 +536,8 @@ def leaderboard_view(exchange):
              "dollars_per_point": exchange.markets[market_id].config.dollars_per_point}
             for market_id in market_ids
         ],
+        "rounds": [{"round_id": round_id, "title": round_.config.title}
+                   for round_id, round_ in exchange.rounds.items()],
         "rows": rows,
     }
 
@@ -476,6 +587,42 @@ def review_message(exchange, market_id, trader_id):
         ],
         "total_edge": total_edge(market, rows),
         **chart_view(exchange, market, rows),
+        "round": round_chart_view(exchange, market, trader_id),
+    }
+
+
+def round_chart_view(exchange, market, trader_id):
+    """For a market in a delta-hedging round, two more lines for the chart (SPEC Q177): the
+    market's fair value after each move (the underlying's fair price, or an option's
+    Black-Scholes value at the implied vol), and the trader's net delta in the round. None for
+    an ordinary market, or before the round starts.
+
+    The net delta is drawn as held through each second: from one move to the next, the delta
+    the trader carried into the next move (what the hedging error scores, Q184). While the
+    round is still running, the last point is the trader's net delta now."""
+    round_id = market.config.round_id
+    if round_id is None or market.opened_at is None:
+        return None
+    round_ = exchange.rounds[round_id]
+    moves = round_.history
+    times = [market.opened_at, *(move.ts for move in moves)]  # the start, then each move
+    prices = [round_.config.start_price, *(move.price for move in moves)]
+    fair = [
+        {"time": ts.isoformat(), "value": round_.greeks_at(market.market_id, price, step).value}
+        for step, (ts, price) in enumerate(zip(times, prices))
+    ]
+    net_delta = [
+        {"time": ts.isoformat(), "value": carried.get(trader_id, 0)}
+        for ts, carried in zip(times, round_.carried)
+    ]
+    if round_.status != "settled":
+        net_delta.append({"time": times[-1].isoformat(), "value": round_.net_delta(trader_id)})
+    return {
+        "round_id": round_id,
+        "title": round_.config.title,
+        "fair": fair,
+        "net_delta": net_delta,
+        "hedging_error": round_.hedging_error(trader_id),
     }
 
 

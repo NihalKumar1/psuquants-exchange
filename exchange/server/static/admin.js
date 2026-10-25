@@ -77,10 +77,132 @@ function render() {
   const edited = editingMarketId && state.markets[editingMarketId];
   if (editingMarketId && (!edited || edited.status !== "created")) resetMarketForm();
 
+  renderRounds();
   renderMarkets();
   renderTraders();
   renderInfoDrops();
 }
+
+// --- Delta-hedging rounds (SPEC Q160-Q195) ------------------------------------------------
+// One card per round: its clock and fair price, the settings only the admin sees (realized
+// vol, the house's spread and size), its buttons, then each market's fair value, greeks and
+// the house's position and PnL there. The admin always sees the greeks; the toggle decides
+// whether traders do.
+
+function renderRounds() {
+  const rounds = Object.values(state.rounds);
+  document.getElementById("rounds-panel").hidden = rounds.length === 0;
+  document.getElementById("greeks-status").textContent =
+    state.greeks_shown ? "Traders see the greeks" : "Greeks hidden from traders";
+  document.getElementById("toggle-greeks").textContent =
+    state.greeks_shown ? "Hide greeks" : "Show greeks";
+  document.getElementById("rounds").replaceChildren(...rounds.map(roundCard));
+}
+
+function roundCard(round) {
+  const card = document.createElement("div");
+  card.className = "round-card";
+
+  const head = document.createElement("div");
+  head.className = "round-head";
+  const status = document.createElement("span");
+  status.textContent = statusText(round.status);
+  status.className = `pill ${round.status}`;
+  const title = document.createElement("h3");
+  title.textContent = `${round.title} (${round.round_id})`;
+  head.append(status, title, roundButtons(round));
+
+  const facts = document.createElement("p");
+  facts.className = "round-facts";
+  facts.textContent = [
+    `Fair ${decimal(round.fair_price, 2)}`,
+    `Last move ${moveText(round.last_draw)}`,
+    `${timeLeft(round.seconds_left)} left (move ${round.step} of ${round.total_steps})`,
+    `Realized vol ${percent(round.realized_vol)}`,
+    `Implied vol ${percent(round.implied_vol)}`,
+    `House ±${number(round.house_half_spread)} × ${number(round.house_size)}`,
+    `House PnL ${money(round.house.total)}`,
+  ].join("  ·  ");
+
+  const table = document.createElement("table");
+  const header = document.createElement("tr");
+  header.append(headerCell("Market"), headerCell("Fair", "num"), headerCell("Delta", "num"),
+    headerCell("Gamma", "num"), headerCell("House pos", "num"), headerCell("House PnL", "num"));
+  const body = document.createElement("tbody");
+  for (const marketId of round.markets) {
+    const greeks = round.greeks[marketId];
+    const house = round.house.markets[marketId];
+    const row = tableRow([state.markets[marketId].title, decimal(greeks.value, 2),
+      decimal(greeks.delta, 2), decimal(greeks.gamma, 4), signed(house.position),
+      pnlCell(house)]);
+    for (let i = 1; i < row.cells.length; i++) row.cells[i].className = "num";
+    body.append(row);
+  }
+  const thead = document.createElement("thead");
+  thead.append(header);
+  table.append(thead, body);
+
+  card.append(head, facts, table);
+  return card;
+}
+
+function roundButtons(round) {
+  const id = round.round_id;
+  const box = document.createElement("div");
+  box.className = "action-row";
+  if (round.status === "created") {
+    box.append(button("Start round", "primary", () => {
+      const question = `Start "${round.title}"? The price starts moving once a second, the ` +
+        `house starts quoting, and the round settles itself in ${timeLeft(round.seconds_left)}.`;
+      if (confirm(question)) send({ type: "start_round", round_id: id });
+    }));
+  } else if (round.status === "running") {
+    box.append(button("Halt", "sell", () => send({ type: "halt_round", round_id: id })));
+  } else if (round.status === "halted") {
+    box.append(button("Resume", "buy", () => send({ type: "resume_round", round_id: id })));
+  } else {
+    box.append(totStatus(`Settled at ${number(state.markets[id].settlement_value)}`));
+  }
+  return box;
+}
+
+const ROUND_FIELDS = {
+  round_id: "r-id",
+  title: "r-title",
+  start_price: "r-start",
+  tick_size: "r-tick",
+  minutes: "r-minutes",
+  max_position: "r-max-position",
+  dollars_per_point: "r-dollars",
+  house_half_spread: "r-half-spread",
+  house_size: "r-house-size",
+};
+
+function strikes(id) {
+  // "950, 1000 1050" -> [950, 1000, 1050]
+  return document.getElementById(id).value.split(/[\s,]+/).filter((text) => text !== "").map(Number);
+}
+
+document.getElementById("round-form").addEventListener("submit", (event) => {
+  // The form keeps what was typed, so a second round with other settings is quick to make.
+  event.preventDefault();
+  const command = { type: "create_round" };
+  for (const [setting, id] of Object.entries(ROUND_FIELDS)) {
+    const value = document.getElementById(id).value.trim();
+    command[setting] = setting === "round_id" || setting === "title" ? value : Number(value);
+  }
+  // Typed in percent; the server takes fractions (20% -> 0.2).
+  command.realized_vol = Number(document.getElementById("r-realized-vol").value) / 100;
+  command.implied_vol = Number(document.getElementById("r-implied-vol").value) / 100;
+  command.options = [
+    ...strikes("r-calls").map((strike) => ({ kind: "call", strike })),
+    ...strikes("r-puts").map((strike) => ({ kind: "put", strike })),
+  ];
+  send(command);
+});
+
+document.getElementById("toggle-greeks").addEventListener("click", () =>
+  send({ type: state.greeks_shown ? "hide_greeks" : "show_greeks" }));
 
 function renderMarkets() {
   const markets = Object.values(state.markets);
@@ -114,7 +236,9 @@ function marketActions(market) {
   const box = document.createElement("div");
   box.className = "action-row";
   const tot = market.tot;
-  if (market.status === "created") {
+  if (market.round_id !== null && market.status !== "settled") {
+    box.append(totStatus(`Run by round ${market.round_id} (above)`));
+  } else if (market.status === "created") {
     // Two ways to start: the Trade or Tighten opening, or straight into continuous trading.
     box.append(
       button("Edit", "ghost", () => startEditing(market)),
@@ -172,22 +296,27 @@ function totStatus(text) {
 function renderTraders() {
   // One row per trader: status, then position and PnL in each market (in that market's points),
   // then total PnL and equity in dollars (each market's PnL × its $ per point).
+  // Then, for each delta-hedging round, their net delta and hedging error ("—" for anyone who
+  // never held one of its options).
   const markets = Object.values(state.markets);
+  const rounds = Object.values(state.rounds);
 
-  // Two header rows: market titles on top (each over its Pos and PnL columns), then labels.
+  // Two header rows: market and round titles on top (each over its two columns), then labels.
   const top = document.createElement("tr");
   top.append(headerCell(""), headerCell(""),
     ...markets.map((market) => headerCell(market.title, "market-head-cell", 2)),
+    ...rounds.map((round) => headerCell(round.title, "market-head-cell", 2)),
     headerCell(""), headerCell(""), headerCell(""));
   const labels = document.createElement("tr");
   labels.append(headerCell("Trader"), headerCell("Status"),
     ...markets.flatMap(() => [headerCell("Pos", "num"), headerCell("PnL", "num")]),
+    ...rounds.flatMap(() => [headerCell("Net delta", "num"), headerCell("Hedge err", "num")]),
     headerCell("Total PnL ($)", "num"), headerCell("Equity", "num"), headerCell(""));
   document.querySelector("#traders thead").replaceChildren(top, labels);
 
   const tbody = document.querySelector("#traders tbody");
   if (state.traders.length === 0) {
-    tbody.replaceChildren(emptyRow(5 + 2 * markets.length, "Nobody has joined yet."));
+    tbody.replaceChildren(emptyRow(5 + 2 * (markets.length + rounds.length), "Nobody has joined yet."));
     return;
   }
   const rows = state.traders.map((trader) => {
@@ -196,6 +325,10 @@ function renderTraders() {
     for (const market of markets) {
       const mine = trader.markets[market.market_id];
       cells.push(signed(mine.position), pnlCell(mine));
+    }
+    for (const round of rounds) {
+      const mine = trader.rounds[round.round_id];
+      cells.push(decimal(mine.net_delta, 2), decimal(mine.hedging_error, 2));
     }
     cells.push(pnlCell(trader.total, signedMoney, money), money(trader.total.equity),
       traderActions(trader));

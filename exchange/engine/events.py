@@ -28,6 +28,7 @@ class MarketCreated(Event):
     forced_trade_size: int
     forced_trade_seconds: int
     dollars_per_point: float = 1  # 1 in logs saved before multipliers existed
+    round_id: str | None = None  # the delta-hedging round it belongs to, if any
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -117,6 +118,79 @@ class InfoDropMarked(Event):
     Info drops belong to the whole room, so market_id is None."""
 
     note: str
+
+
+# --- Delta-hedging rounds (SPEC Q160-Q185) ---------------------------------------------------
+# A round's own events have market_id None and say which round they belong to. Each also comes
+# with the ordinary market events for the round's markets (MarketCreated, MarketOpened, ...).
+
+
+@dataclass(frozen=True, kw_only=True)
+class RoundCreated(Event):
+    """A new round: an underlying plus options on it. The MarketCreated events follow."""
+
+    round_id: str
+    title: str
+    start_price: int
+    tick_size: int
+    realized_vol: float  # how much the underlying really moves (over the whole round)
+    implied_vol: float  # what the house prices options with, and the greeks use
+    minutes: int
+    options: tuple  # (("call", 100), ("put", 95), ...)
+    max_position: int
+    dollars_per_point: float
+    house_half_spread: int
+    house_size: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class RoundStarted(Event):
+    """The clock starts and the round's markets open (MarketOpened events follow)."""
+
+    round_id: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class RoundHalted(Event):
+    """The price, the clock and trading stop (MarketHalted events follow)."""
+
+    round_id: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class RoundResumed(Event):
+    round_id: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class UnderlyingMoved(Event):
+    """One random step of the underlying's fair price. The server drew it; replay just reads it."""
+
+    round_id: str
+    step: int  # 1, 2, 3, ... up to the round's total steps
+    price: float
+    draw: float  # the standard normal draw behind it: 3.0 = a 3-standard-deviation move up
+
+
+@dataclass(frozen=True, kw_only=True)
+class RoundSettled(Event):
+    """The round reached expiry. A MarketSettled event follows for each of its markets."""
+
+    round_id: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class GreeksShown(Event):
+    """Traders' pages now get option values, deltas, and their own net delta and gamma."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class GreeksHidden(Event):
+    pass
+
+
+ROUND_EVENTS = (RoundCreated, RoundStarted, RoundHalted, RoundResumed, UnderlyingMoved,
+                RoundSettled)
 
 
 # --- Traders --------------------------------------------------------------------------------
@@ -273,6 +347,14 @@ EVENT_TYPES = {
         ForcedTradeEnded,
         SideAssigned,
         InfoDropMarked,
+        RoundCreated,
+        RoundStarted,
+        RoundHalted,
+        RoundResumed,
+        UnderlyingMoved,
+        RoundSettled,
+        GreeksShown,
+        GreeksHidden,
         TraderJoined,
         TraderKicked,
         TraderRenamed,
@@ -313,6 +395,8 @@ def from_dict(data):
     for name in ("side", "aggressor_side"):
         if name in data:
             data[name] = Side(data[name])
+    if "options" in data:  # JSON turns the tuples into lists
+        data["options"] = tuple(tuple(option) for option in data["options"])
     if data.get("ts") is not None:
         data["ts"] = datetime.fromisoformat(data["ts"])
     return event_class(**data)

@@ -83,6 +83,29 @@ function perPoint(dollarsPerPoint) {
   return `${money(dollarsPerPoint)}/pt`;
 }
 
+// Delta-hedging rounds.
+
+function decimal(value, digits) {
+  // Always this many decimals, e.g. a delta "0.56" or a gamma "0.0021". "—" when there is none.
+  if (value === null || value === undefined) return "—";
+  return value.toLocaleString(undefined, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+}
+
+function percent(fraction) {
+  // A vol: 0.2 -> "20%".
+  return `${number(fraction * 100)}%`;
+}
+
+function timeLeft(seconds) {
+  // "2:05"
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function moveText(draw) {
+  // The last move's size in standard deviations, e.g. "+1.3σ".
+  return (draw > 0 ? "+" : "") + decimal(draw, 1) + "σ";
+}
+
 function statusText(status) {
   // "mm_quoting" -> "MM QUOTING"
   return status.replaceAll("_", " ").toUpperCase();

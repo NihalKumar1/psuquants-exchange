@@ -104,10 +104,69 @@ function render() {
   // In dollars: each market's PnL (in its own points) times its $ per point, added up.
   document.getElementById("equity").textContent = money(state.total.equity);
   document.getElementById("total-pnl").replaceChildren(signedMoney(state.total.total));
+  renderRounds();
   renderColumns();
   renderMyOrders();
   renderPositions();
   renderTape();
+}
+
+// --- Delta-hedging rounds (SPEC Q160-Q195) ------------------------------------------------
+// The underlying's fair price and the clock are public. Option values and greeks, and my own
+// net delta, gamma and hedging error, come from the server only while the instructor shows the
+// greeks (state.rounds[...].greeks and state.my_rounds are empty otherwise).
+
+function renderRounds() {
+  // A bar for each round that is running or halted (its markets have columns).
+  const bars = Object.values(state.rounds)
+    .filter((round) => round.status === "running" || round.status === "halted")
+    .map(roundBar);
+  document.getElementById("rounds").replaceChildren(...bars);
+}
+
+function roundBar(round) {
+  const bar = document.getElementById("round-bar").content.firstElementChild.cloneNode(true);
+  const status = part(bar, "status");
+  status.textContent = statusText(round.status);
+  status.className = `status pill ${round.status}`;
+  part(bar, "round-title").textContent = round.title;
+  part(bar, "round-fair").textContent = decimal(round.fair_price, 2);
+  part(bar, "round-move").textContent = moveText(round.last_draw);
+  part(bar, "round-time").textContent = timeLeft(round.seconds_left);
+  part(bar, "round-vol").textContent = percent(round.implied_vol);
+
+  const mine = state.my_rounds[round.round_id];
+  part(bar, "round-mine").hidden = mine === undefined;
+  part(bar, "round-hidden").hidden = mine !== undefined;
+  if (mine !== undefined) {
+    const delta = part(bar, "my-delta");
+    delta.textContent = (mine.net_delta > 0 ? "+" : "") + decimal(mine.net_delta, 2);
+    delta.className = `my-delta ${mine.net_delta > 0 ? "up" : mine.net_delta < 0 ? "down" : ""}`;
+    part(bar, "my-gamma").textContent = decimal(mine.net_gamma, 4);
+    part(bar, "my-error").textContent = decimal(mine.hedging_error, 2);
+  }
+  return bar;
+}
+
+function renderGreeks(column, market) {
+  // The line under a round market's title: the underlying's fair price, or an option's
+  // Black-Scholes value, delta and gamma while the greeks are shown. Hidden for other markets.
+  const line = part(column, "greeks");
+  const round = market.round_id === null ? null : state.rounds[market.round_id];
+  line.hidden = round === null;
+  if (round === null) return;
+  let parts;
+  if (market.market_id === round.round_id) {  // the underlying
+    parts = [`Fair ${decimal(round.fair_price, 2)}`, "Delta 1"];
+  } else if (round.greeks !== null) {
+    const greeks = round.greeks[market.market_id];
+    parts = [`Fair ${decimal(greeks.value, 2)}`, `Delta ${decimal(greeks.delta, 2)}`,
+      `Gamma ${decimal(greeks.gamma, 4)}`];
+  } else {
+    parts = ["Expires when the round ends; greeks hidden"];
+  }
+  line.textContent = parts.join("  ·  ");
+  line.title = line.textContent;
 }
 
 function renderColumns() {
@@ -149,6 +208,7 @@ function renderColumn(column, market, mine) {
     `  ·  ${perPoint(market.dollars_per_point)}`;
   part(column, "market-info").textContent = info;
   part(column, "market-info").title = info + "  ·  Click the best bid or offer to trade";
+  renderGreeks(column, market);
   for (const name of ["buy-price", "sell-price", "quote-bid", "quote-ask", "width-input", "mm-bid", "mm-ask"]) {
     part(column, name).step = market.tick_size;
   }
@@ -449,13 +509,13 @@ function renderPositions() {
     tbody.replaceChildren(emptyRow(1, "No market has started yet"));
     return;
   }
-  // Every market lists every trader, in the same (join) order, so row i is the same trader in
-  // each market's list.
-  const rows = state.markets[marketIds[0]].positions.map((entry, i) => {
-    const row = tableRow([entry.name, ...marketIds.map((marketId) =>
-      signed(state.markets[marketId].positions[i].position))]);
+  // Each market's positions are just numbers in join order, the order of state.traders, so
+  // position i is trader i's in every market.
+  const rows = state.traders.map((trader, i) => {
+    const row = tableRow([trader.name, ...marketIds.map((marketId) =>
+      signed(state.markets[marketId].positions[i]))]);
     for (let c = 1; c < row.cells.length; c++) row.cells[c].className = "num";
-    if (entry.trader_id === me.trader_id) row.classList.add("mine");
+    if (trader.trader_id === me.trader_id) row.classList.add("mine");
     return row;
   });
   tbody.replaceChildren(...rows);

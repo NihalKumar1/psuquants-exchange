@@ -45,7 +45,7 @@
   <main class="review review-only">
     <section class="panel">
       <div class="chart-head">
-        <h2>Price</h2>
+        <h2 id="chart-heading">Price</h2>
         <div class="legend">
           <span><i class="key mark"></i>Mark</span>
           <span><i class="key last"></i>Last price</span>
@@ -53,6 +53,9 @@
           <span><b class="down">▼</b> Sell</span>
           <span><i class="key drop"></i>Info drop</span>
           <span><i class="key settle"></i>Settlement</span>
+          <!-- Only for a market in a delta-hedging round (SPEC Q177). -->
+          <span class="round-key"><i class="key fair"></i>Fair value</span>
+          <span class="round-key"><i class="key delta"></i>Net delta (right axis)</span>
         </div>
         <!-- The price axis range: blank fits the prices on the chart (SPEC Q128). -->
         <div class="chart-range">

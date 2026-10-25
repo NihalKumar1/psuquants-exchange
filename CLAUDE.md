@@ -65,6 +65,16 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   Money (SPEC Q144–Q152): each market's PnL is in points; `MarketConfig.dollars_per_point` is
   its contract multiplier. `Exchange.total_pnl` adds up PnL × multiplier (dollars) and
   `Exchange.equity` = `starting_equity` (admin-set, default $100,000) + that total. Score only.
+  Delta-hedging rounds (SPEC Q160–Q185): `engine/delta_round.py` (`RoundConfig`, `DeltaRound`)
+  ties an underlying market and its option markets together (`MarketConfig.round_id`). The
+  server calls `Exchange.step_round` once a second; each GBM move is drawn from `Exchange.rng`
+  and logged as `UnderlyingMoved`, and the last move settles the round. `engine/options.py` is
+  Black–Scholes (vol over the whole round, time = fraction of moves left). `net_delta`,
+  `net_gamma` and `hedging_error` (avg |net delta| carried into each move) are per round.
+  `Exchange.greeks_shown` is the admin's Show/Hide greeks toggle. `engine/house.py` is the house
+  market maker's pricing (`HOUSE_ID = "house"`, not in `Exchange.traders`); `Exchange` re-quotes
+  for it after each move, each fill against it and on resume (`limited=False` skips its max
+  position).
 - `exchange/server/room.py`: room code, join/rejoin tokens, live trader and admin connections,
   trader + admin commands, and `reset()` (new empty game, same code; connected traders are
   carried over with **new ids and tokens**, so the socket loop looks up `trader_of(connection)`
@@ -83,19 +93,30 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   everyone (used by the load test to time commands; browsers never send it). A `rejected` reply
   carries the command's `market_id`, `kind` and `side`, so the trader page can outline the form
   that sent it.
+  Each running delta-hedging round has a clock task (`round_clocks`) that calls `step_round`
+  every `round_interval` (1 s); halt and Reset cancel it, resume starts a new one.
   The review page is on `/review/ws` (admin password, then `review_pick`); its live pushes are
   throttled to one per `review_interval` (1 s). Every `review_state` also carries the
   `leaderboard` (`views.leaderboard_view`: everyone ranked by equity, ties share a rank, SPEC
   Q153–Q158); it goes only to the review page, never to traders (Q10). `GET /admin/export` (password in the
   `X-Admin-Secret` header) downloads the zip; the room remembers the export so Reset can warn.
-- `exchange/server/export.py`: the export zip (trades/orders/events CSVs + events.json), with US
+  Rounds in views: every update has `rounds` (`round_view`: fair price, moves left, options;
+  `greeks` only while shown) and `my_rounds` (own net delta/gamma/hedging error, only while
+  shown). The realized vol is admin-only (`round_admin_view`, with the house's PnL).
+  The review page's `review` carries `round` for a market in a round (`round_chart_view`: the
+  fair-value line and the picked trader's net delta, from `DeltaRound.history`, `greeks_at` and
+  `carried`, the delta each trader carried into each move); `review.js` draws the delta on a
+  second axis at the right.
+- `exchange/server/export.py`: the export zip (trades/orders/events CSVs + events.json, plus
+  moves.csv and rounds.csv when the game had a delta-hedging round), with US
   Eastern times and names in place of trader ids. Needs `tzdata` on Windows.
 - `exchange/server/main.py`: the app uvicorn runs (`build_app(environ)` reads `ADMIN_SECRET`).
 - `exchange/server/static/`: trader page, admin page, review page (`review.js` draws the chart as
   plain SVG; its price axis has instructor Min/Max boxes, remembered per market in localStorage;
   a Review | Leaderboard switch in its top bar swaps the chart and trades for the leaderboard),
   and `common.js` helpers (plain HTML/JS/CSS, no build step).
-- `scripts/load_test.py`: the 60-bot load test (also imported by `tests/test_load_test.py`).
+- `scripts/load_test.py`: the 60-bot load test (also imported by `tests/test_load_test.py`). It
+  runs a 2-minute delta-hedging round beside the market (`--round-minutes 0` skips it).
   `scripts/demo_fill.py` (gitignored) fills a book for screenshots.
 - `render.yaml`: the Render Blueprint (free plan, Python 3.14.4, one worker).
 - Tests: enter `TestClient` with `with` so all sockets share one event loop (like uvicorn).

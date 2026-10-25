@@ -13,6 +13,8 @@
   --bid-soft: rgba(34, 197, 94, 0.12);
   --ask: #ef4444;
   --ask-soft: rgba(239, 68, 68, 0.12);
+  --fair: #a78bfa;          /* a round's fair value on the review chart */
+  --delta: #f59e0b;         /* a trader's net delta on the review chart */
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;
   --radius: 10px;
 }
@@ -294,6 +296,24 @@ kbd {
 .market-head h1 { font-size: 16px; flex: 0 1 auto; }
 .market-head .pill { flex-shrink: 0; white-space: nowrap; }
 .market-info { margin-left: auto; font-size: 12px; flex: 0 3 auto; }  /* gives way before the title */
+/* A round market's fair value and greeks, under its title. */
+.market .greeks {
+  font: 12px var(--mono); padding: 0 2px; margin-top: -6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* A delta-hedging round's bar, above the market columns. */
+.market-area #rounds { display: flex; flex-direction: column; gap: 8px; }
+.market-area #rounds:not(:empty) { margin-bottom: 10px; }
+.round-bar { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; padding: 8px 12px; }
+.round-title { font-size: 15px; }
+.round-mine { display: contents; }
+.round-stat { display: flex; flex-direction: column; gap: 1px; }
+.round-stat small {
+  color: var(--muted); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+}
+.round-stat b { font: 600 15px var(--mono); }
+.round-hidden { font-size: 12px; margin-left: auto; }
 
 .market-body {
   flex: 1;
@@ -674,6 +694,14 @@ th.market-head-cell {
 }
 #traders tr.kicked td { color: var(--muted); }
 
+/* Delta-hedging rounds on the admin page: one card per round. */
+.round-card { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.round-card:last-child { border-bottom: none; padding-bottom: 0; }
+.round-head { display: flex; align-items: center; gap: 10px; }
+.round-head h3 { margin: 0; font-size: 15px; color: var(--text); font-weight: 600; }
+.round-head .action-row { margin-left: auto; }
+.round-facts { margin: 6px 0 8px; color: var(--muted); font-size: 12px; font-family: var(--mono); }
+
 /* --- Review page (the projector) ----------------------------------------------------------- */
 
 .picker { display: flex; flex-direction: column; gap: 2px; }
@@ -707,6 +735,8 @@ select:focus { outline: none; border-color: var(--accent); }
 .key.last { border-color: var(--muted); border-top-style: dashed; }
 .key.drop { border-color: #eab308; border-top-style: dashed; }
 .key.settle { border-color: var(--text); }
+.key.fair { border-color: var(--fair); }
+.key.delta { border-color: var(--delta); }
 
 #chart { width: 100%; }
 .chart { display: block; }
@@ -722,6 +752,10 @@ select:focus { outline: none; border-color: var(--accent); }
 .chart .drop-note { fill: #eab308; font-size: 11px; }
 .chart .settle { stroke: var(--text); stroke-width: 1.5; }
 .chart .settle-note { fill: var(--text); font: 600 12px var(--mono); }
+.chart .line.fair { stroke: var(--fair); stroke-width: 1.5; }
+.chart .line.delta { stroke: var(--delta); stroke-width: 2; }
+.chart .delta-zero { stroke: var(--delta); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.6; }
+.chart .delta-axis { fill: var(--delta); }
 
 /* Bigger text than the trading pages, for reading from the back of the room. */
 #fills td { font-size: 15px; padding: 8px 10px; }
