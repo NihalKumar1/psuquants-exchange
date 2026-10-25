@@ -66,8 +66,10 @@ What the free plan means for us:
 ## Load test
 
 [scripts/load_test.py](scripts/load_test.py) plays a whole game with 60 bot traders plus an
-admin connection. It creates a market, runs Trade or Tighten, trades for 2 minutes (each bot
-acts about every 2 seconds), then settles and checks the results.
+admin connection. It creates a market, runs Trade or Tighten, starts a 2-minute delta-hedging
+round beside it (the house quoting all its markets), trades for 2 minutes (each bot acts about
+every 2 seconds, in a random running market), then settles, waits for the round to settle
+itself and checks the results. `--round-minutes 0` leaves the round out.
 
 ```
 $env:ADMIN_SECRET="the-server's-admin-password"
@@ -83,6 +85,7 @@ It prints **RESULT: PASS** when all of these hold:
 - every forced trade prints
 - positions add up to 0
 - total PnL adds up to 0 after settlement
+- the round settles itself, and its positions and PnL add up to 0 counting the house
 
 The bots show up on the admin page like real traders while it runs.
 

@@ -63,6 +63,39 @@
         </form>
       </section>
 
+      <!-- A delta-hedging round (SPEC Q160-Q195): an underlying that moves by itself, options on
+           it, and the house quoting all of them. Vols are typed in percent. -->
+      <section class="panel">
+        <h2>Create delta-hedging round</h2>
+        <form id="round-form" class="stack-form">
+          <div class="form-grid">
+            <label title="Letters and digits only. It is the underlying's market id; options are e.g. SPX-C-1000.">Name
+              <input id="r-id" autocomplete="off" value="SPX" required></label>
+            <label>Title <input id="r-title" autocomplete="off" value="S&amp;P" required></label>
+            <label>Starting price <input id="r-start" type="number" min="1" step="1" value="1000" required></label>
+            <label>Tick size <input id="r-tick" type="number" min="1" step="1" value="1" required></label>
+            <label title="How much the underlying really moves: the standard deviation of the price at expiry, in % of the start. Only the admin sees it.">Realized vol (%)
+              <input id="r-realized-vol" type="number" min="0" step="any" value="30" required></label>
+            <label title="What the house prices options at (Black-Scholes) and the greeks use. Traders see it.">Implied vol (%)
+              <input id="r-implied-vol" type="number" min="0" step="any" value="20" required></label>
+            <label title="The price moves once a second, so 3 minutes is 180 moves.">Minutes
+              <input id="r-minutes" type="number" min="1" step="1" value="3" required></label>
+            <label>Max position <input id="r-max-position" type="number" min="1" step="1" value="200" required></label>
+            <label title="Strikes separated by commas, e.g. 950, 1000, 1050">Call strikes
+              <input id="r-calls" autocomplete="off" value="950, 1000, 1050"></label>
+            <label title="Strikes separated by commas; leave blank for no puts">Put strikes
+              <input id="r-puts" autocomplete="off" placeholder="none"></label>
+            <label title="One for the whole round, so 1 option = 1 unit of the underlying">$ per point
+              <input id="r-dollars" type="number" min="0" step="any" value="1" required></label>
+            <label title="The house quotes fair ± this when the market is quiet and it is flat. It widens after big moves and when it holds a big position.">House half-spread
+              <input id="r-half-spread" type="number" min="1" step="1" value="1" required></label>
+            <label title="The house's size on each side, in every market">House size
+              <input id="r-house-size" type="number" min="1" step="1" value="10" required></label>
+          </div>
+          <button type="submit" class="primary">Create round</button>
+        </form>
+      </section>
+
       <section class="panel">
         <h2>Starting equity <span id="starting-equity" class="muted"></span></h2>
         <form id="equity-form" class="entry info">
@@ -87,6 +120,19 @@
 
     <!-- Right: the markets and the traders. -->
     <div class="column">
+      <section class="panel" id="rounds-panel" hidden>
+        <div class="panel-head">
+          <h2>Delta-hedging rounds</h2>
+          <!-- Show/Hide greeks: option values and greeks, and each trader's own net delta, gamma
+               and hedging error, on traders' pages (SPEC Q165, Q192). -->
+          <div class="action-row">
+            <span id="greeks-status" class="tot-status"></span>
+            <button id="toggle-greeks" type="button" class="ghost"></button>
+          </div>
+        </div>
+        <div id="rounds"></div>
+      </section>
+
       <section class="panel">
         <h2>Markets</h2>
         <div class="scroll-x">

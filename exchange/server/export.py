@@ -5,6 +5,11 @@
     events.csv   one row per event in the log (rejections and info drops included)
     events.json  the full event log
 
+and, when the game had delta-hedging rounds (SPEC Q178):
+
+    moves.csv    one row per move of each round's underlying
+    rounds.csv   one row per trader per round: net delta, hedging error and PnL ($)
+
 Times are US Eastern (the meeting's clock). Traders appear by their current names everywhere,
 also in events.json, where each trader id is replaced by the name.
 The CSVs start with a byte-order mark so Excel reads names with accents correctly.
@@ -25,6 +30,7 @@ from exchange.engine import (
     TradeExecuted,
     to_dict,
 )
+from exchange.engine.house import HOUSE_ID, HOUSE_NAME
 
 EASTERN = ZoneInfo("America/New_York")
 TRADER_ID_FIELDS = ("trader_id", "buyer_id", "seller_id")  # replaced by names in the export
@@ -38,6 +44,9 @@ def export_zip(exchange):
         archive.writestr("orders.csv", to_csv(*orders_table(exchange)))
         archive.writestr("events.csv", to_csv(*events_table(exchange)))
         archive.writestr("events.json", json.dumps(events_json(exchange), indent=2))
+        if exchange.rounds:
+            archive.writestr("moves.csv", to_csv(*moves_table(exchange)))
+            archive.writestr("rounds.csv", to_csv(*rounds_table(exchange)))
     return data.getvalue()
 
 
@@ -64,6 +73,8 @@ def csv_time(ts):
 
 
 def name_of(exchange, trader_id):
+    if trader_id == HOUSE_ID:
+        return HOUSE_NAME
     return exchange.traders.get(trader_id, trader_id)
 
 
@@ -147,6 +158,35 @@ def order_status(exchange, order, size, filled, cancelled):
     if exchange.markets[order.market_id].status is MarketStatus.SETTLED:
         return "frozen"
     return "resting"
+
+
+def moves_table(exchange):
+    """Every move of every round's underlying: the new fair price and the random draw (in
+    standard deviations) that moved it."""
+    header = ["round_id", "round", "step", "time", "price", "draw"]
+    rows = [
+        [round_id, round_.config.title, move.step, csv_time(move.ts), move.price, move.draw]
+        for round_id, round_ in exchange.rounds.items()
+        for move in round_.history
+    ]
+    return header, rows
+
+
+def rounds_table(exchange):
+    """Each trader's result in each round, then the house's: net delta now (at expiry once
+    settled), hedging error (blank for anyone who never held an option, and the house) and the
+    PnL in the round's markets in dollars."""
+    header = ["round_id", "round", "trader", "net_delta", "hedging_error", "pnl_dollars"]
+    rows = []
+    for round_id, round_ in exchange.rounds.items():
+        for trader_id in [*exchange.traders, HOUSE_ID]:
+            error = None if trader_id == HOUSE_ID else round_.hedging_error(trader_id)
+            pnl = sum(exchange.markets[market_id].pnl(trader_id).total
+                      for market_id in round_.market_ids) * round_.config.dollars_per_point
+            rows.append([round_id, round_.config.title, name_of(exchange, trader_id),
+                         round_.net_delta(trader_id), "" if error is None else error,
+                         round(pnl, 2)])
+    return header, rows
 
 
 def events_table(exchange):

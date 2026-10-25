@@ -80,6 +80,8 @@ class DeltaRound:
         self.steps_taken = 0
         self.last_draw = 0  # the last move's size in standard deviations (the house widens)
         self.history = []  # UnderlyingMoved events, oldest first (for the review chart)
+        # One {trader_id: net delta} per move: what each trader carried into it (review chart).
+        self.carried = []
         self.abs_delta_sums = {}  # trader_id -> sum of |net delta| carried into each move
 
     # --- Queries --------------------------------------------------------------------------
@@ -120,11 +122,16 @@ class DeltaRound:
     def greeks(self, market_id):
         """Value, delta and gamma of one unit of this market at the fair price. Options use
         Black-Scholes at the implied vol (the vol everyone is told, SPEC Q175)."""
+        return self.greeks_at(market_id, self.fair_price, self.steps_taken)
+
+    def greeks_at(self, market_id, price, step):
+        """The same, as they were after `step` moves with the underlying at `price` (the review
+        chart draws an option's fair value over time from these)."""
         if market_id == self.underlying_id:
-            return Greeks(value=self.fair_price, delta=1, gamma=0)
+            return Greeks(value=price, delta=1, gamma=0)
         kind, strike = self.option_of(market_id)
-        return black_scholes(kind, self.fair_price, strike, self.config.implied_vol,
-                             self.time_left)
+        time_left = (self.total_steps - step) / self.total_steps
+        return black_scholes(kind, price, strike, self.config.implied_vol, time_left)
 
     def net_delta(self, trader_id):
         """Underlying position + each option position times that option's delta."""
@@ -205,9 +212,10 @@ class DeltaRound:
             self.status = "running"
         elif isinstance(event, UnderlyingMoved):
             # Score the delta each trader carried into this move, before the price changes.
-            for trader_id in self.traders():
-                self.abs_delta_sums[trader_id] = (self.abs_delta_sums.get(trader_id, 0)
-                                                  + abs(self.net_delta(trader_id)))
+            carried = {trader_id: self.net_delta(trader_id) for trader_id in self.traders()}
+            for trader_id, delta in carried.items():
+                self.abs_delta_sums[trader_id] = self.abs_delta_sums.get(trader_id, 0) + abs(delta)
+            self.carried.append(carried)
             self.fair_price = event.price
             self.steps_taken = event.step
             self.last_draw = event.draw

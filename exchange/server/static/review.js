@@ -114,6 +114,10 @@ function render() {
 
   document.getElementById("fills-heading").textContent =
     review ? `${review.trader}'s trades in ${review.title}` : "Trades";
+  const round = review === null ? null : review.round;
+  document.getElementById("chart-heading").textContent = round === null ? "Price" :
+    `Price · ${review.trader}'s net delta in ${round.title} (hedging error ${decimal(round.hedging_error, 2)})`;
+  document.querySelectorAll(".round-key").forEach((key) => { key.hidden = round === null; });
   renderFills(review);
   renderRangeBoxes(review);
   renderChart(review);
@@ -231,8 +235,11 @@ function showView(name) {
 }
 
 function renderLeaderboard(board) {
+  // Then each delta-hedging round's hedging error (average |net delta|, lower is better; "—" for
+  // anyone who never held one of its options). The ranking stays by equity (SPEC Q176).
   const headings = [["#", "num"], ["Trader", ""], ["Equity", "num"], ["Total PnL ($)", "num"],
-    ...board.markets.map((market) => [`${market.title} (pts)`, "num"])];
+    ...board.markets.map((market) => [`${market.title} (pts)`, "num"]),
+    ...board.rounds.map((round) => [`${round.title} hedging error`, "num"])];
   const head = document.createElement("tr");
   for (const [text, className] of headings) {
     const th = document.createElement("th");
@@ -254,6 +261,7 @@ function renderLeaderboard(board) {
       number(trader.rank), trader.kicked ? `${trader.name} (removed)` : trader.name,
       money(trader.equity), signedMoney(trader.total_pnl),
       ...board.markets.map((market) => signed(trader.markets[market.market_id])),
+      ...board.rounds.map((round) => decimal(trader.hedging_errors[round.round_id], 2)),
     ]);
     for (let i = 0; i < row.cells.length; i++) if (i !== 1) row.cells[i].className = "num";
     if (trader.kicked) row.classList.add("kicked");
@@ -275,6 +283,7 @@ showView(view);
 
 const CHART_HEIGHT = 380;
 const MARGIN = { top: 28, right: 20, bottom: 30, left: 76 };
+const DELTA_AXIS = 56;  // extra room on the right for the net-delta axis (round markets only)
 const RANGE_BOXES = { min: "chart-min", max: "chart-max" };
 
 function rangeKey(review) {
@@ -345,16 +354,19 @@ function renderChart(review) {
     return;
   }
   const chart = review.chart;
+  const round = review.round;
   const width = Math.max(box.clientWidth, 320);
+  const right = MARGIN.right + (round === null ? 0 : DELTA_AXIS);  // the plot's right margin
   const svg = svgElement("svg", { width, height: CHART_HEIGHT, class: "chart" });
 
   // Scales: time -> x pixels, price -> y pixels.
   const t0 = Date.parse(chart.start);
   const t1 = Math.max(Date.parse(chart.end), t0 + 1000);  // at least one second wide
-  const x = (time) => MARGIN.left + (Date.parse(time) - t0) / (t1 - t0) * (width - MARGIN.left - MARGIN.right);
+  const x = (time) => MARGIN.left + (Date.parse(time) - t0) / (t1 - t0) * (width - MARGIN.left - right);
   const prices = [
     ...chart.points.flatMap((point) => [point.mark, point.last]),
     ...chart.fills.map((fill) => fill.price),
+    ...(round === null ? [] : round.fair.map((point) => point.value)),
     review.settlement_value,
   ].filter((price) => price !== null);
   if (prices.length === 0) prices.push(0);
@@ -364,7 +376,7 @@ function renderChart(review) {
 
   // Grid lines and price labels.
   for (const price of ticks) {
-    svg.append(svgElement("line", { x1: MARGIN.left, x2: width - MARGIN.right, y1: y(price), y2: y(price), class: "grid" }));
+    svg.append(svgElement("line", { x1: MARGIN.left, x2: width - right, y1: y(price), y2: y(price), class: "grid" }));
     svg.append(svgText(number(price), { x: MARGIN.left - 8, y: y(price) + 4, class: "axis", "text-anchor": "end" }));
   }
   // Time labels: the start, the end, and a few in between.
@@ -385,8 +397,8 @@ function renderChart(review) {
   // The settlement line.
   if (review.settlement_value !== null) {
     const level = y(review.settlement_value);
-    svg.append(svgElement("line", { x1: MARGIN.left, x2: width - MARGIN.right, y1: level, y2: level, class: "settle" }));
-    svg.append(svgText(`Settled ${number(review.settlement_value)}`, { x: width - MARGIN.right, y: level - 6, class: "settle-note", "text-anchor": "end" }));
+    svg.append(svgElement("line", { x1: MARGIN.left, x2: width - right, y1: level, y2: level, class: "settle" }));
+    svg.append(svgText(`Settled ${number(review.settlement_value)}`, { x: width - right, y: level - 6, class: "settle-note", "text-anchor": "end" }));
   }
 
   // Prices beyond the axis are cut off at the plot area (8 px spare at the top and bottom, so a
@@ -394,7 +406,7 @@ function renderChart(review) {
   const clip = svgElement("clipPath", { id: "plot-area" });
   clip.append(svgElement("rect", {
     x: MARGIN.left - 8, y: MARGIN.top - 8,
-    width: width - MARGIN.left - MARGIN.right + 16, height: CHART_HEIGHT - MARGIN.top - MARGIN.bottom + 16,
+    width: width - MARGIN.left - right + 16, height: CHART_HEIGHT - MARGIN.top - MARGIN.bottom + 16,
   }));
   const defs = svgElement("defs", {});
   defs.append(clip);
@@ -404,6 +416,10 @@ function renderChart(review) {
   // The last price and the mark, as step lines that run to the end of the chart.
   plot.append(svgElement("path", { d: stepPath(chart.points, "last", x, y, chart.end), class: "line last" }));
   plot.append(svgElement("path", { d: stepPath(chart.points, "mark", x, y, chart.end), class: "line mark" }));
+  if (round !== null) {
+    plot.append(svgElement("path", { d: stepPath(round.fair, "value", x, y, chart.end), class: "line fair" }));
+    drawNetDelta(svg, plot, round.net_delta, x, chart.end, width - right);
+  }
 
   // The trader's fills.
   for (const fill of chart.fills) {
@@ -417,6 +433,20 @@ function renderChart(review) {
   }
 
   box.replaceChildren(svg);
+}
+
+function drawNetDelta(svg, plot, points, x, end, plotRight) {
+  // The trader's net delta as a step line on its own axis at the right (0 always in view, with
+  // a dotted line at 0: a perfectly hedged trader's line sits on it).
+  const values = points.map((point) => point.value);
+  const ticks = priceTicks(Math.min(0, ...values), Math.max(0, ...values));
+  const low = ticks[0], high = ticks[ticks.length - 1];
+  const y = (delta) => MARGIN.top + (high - delta) / (high - low) * (CHART_HEIGHT - MARGIN.top - MARGIN.bottom);
+  for (const delta of ticks) {
+    svg.append(svgText(number(delta), { x: plotRight + 8, y: y(delta) + 4, class: "axis delta-axis" }));
+  }
+  svg.append(svgElement("line", { x1: MARGIN.left, x2: plotRight, y1: y(0), y2: y(0), class: "delta-zero" }));
+  plot.append(svgElement("path", { d: stepPath(points, "value", x, y, end), class: "line delta" }));
 }
 
 function stepPath(points, key, x, y, end) {

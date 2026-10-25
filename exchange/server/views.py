@@ -563,6 +563,42 @@ def review_message(exchange, market_id, trader_id):
         ],
         "total_edge": total_edge(market, rows),
         **chart_view(exchange, market, rows),
+        "round": round_chart_view(exchange, market, trader_id),
+    }
+
+
+def round_chart_view(exchange, market, trader_id):
+    """For a market in a delta-hedging round, two more lines for the chart (SPEC Q177): the
+    market's fair value after each move (the underlying's fair price, or an option's
+    Black-Scholes value at the implied vol), and the trader's net delta in the round. None for
+    an ordinary market, or before the round starts.
+
+    The net delta is drawn as held through each second: from one move to the next, the delta
+    the trader carried into the next move (what the hedging error scores, Q184). While the
+    round is still running, the last point is the trader's net delta now."""
+    round_id = market.config.round_id
+    if round_id is None or market.opened_at is None:
+        return None
+    round_ = exchange.rounds[round_id]
+    moves = round_.history
+    times = [market.opened_at, *(move.ts for move in moves)]  # the start, then each move
+    prices = [round_.config.start_price, *(move.price for move in moves)]
+    fair = [
+        {"time": ts.isoformat(), "value": round_.greeks_at(market.market_id, price, step).value}
+        for step, (ts, price) in enumerate(zip(times, prices))
+    ]
+    net_delta = [
+        {"time": ts.isoformat(), "value": carried.get(trader_id, 0)}
+        for ts, carried in zip(times, round_.carried)
+    ]
+    if round_.status != "settled":
+        net_delta.append({"time": times[-1].isoformat(), "value": round_.net_delta(trader_id)})
+    return {
+        "round_id": round_id,
+        "title": round_.config.title,
+        "fair": fair,
+        "net_delta": net_delta,
+        "hedging_error": round_.hedging_error(trader_id),
     }
 
 

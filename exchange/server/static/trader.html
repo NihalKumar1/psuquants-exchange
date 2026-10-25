@@ -51,6 +51,8 @@
     <!-- Left: one column per running market, side by side (oldest on the left). -->
     <div class="market-area">
       <p id="no-markets" class="panel waiting">No market is running. Wait for the instructor.</p>
+      <!-- One bar per running delta-hedging round (renderRounds in trader.js). -->
+      <div id="rounds"></div>
       <div id="markets"></div>
     </div>
 
@@ -97,6 +99,25 @@
   </main>
 </section>
 
+<!-- One delta-hedging round's bar: the underlying's fair price and the clock for everyone; my
+     own net delta, gamma and hedging error only while the instructor shows the greeks. -->
+<template id="round-bar">
+  <div class="round-bar panel">
+    <span class="status pill"></span>
+    <b class="round-title"></b>
+    <span class="round-stat"><small>Fair</small><b class="round-fair"></b></span>
+    <span class="round-stat"><small>Last move</small><b class="round-move"></b></span>
+    <span class="round-stat"><small>Time left</small><b class="round-time"></b></span>
+    <span class="round-stat"><small>Implied vol</small><b class="round-vol"></b></span>
+    <span class="round-mine">
+      <span class="round-stat" title="Your underlying position plus each option position × its delta"><small>My net delta</small><b class="my-delta"></b></span>
+      <span class="round-stat"><small>My gamma</small><b class="my-gamma"></b></span>
+      <span class="round-stat" title="The average |net delta| you carried into each move. Lower is better."><small>Hedging error</small><b class="my-error"></b></span>
+    </span>
+    <span class="round-hidden muted">Greeks hidden: work out your delta yourself.</span>
+  </div>
+</template>
+
 <!-- One market's column. trader.js makes a copy for each running market, so everything inside
      is found by class, not id. A one-line title bar, then the book and the controls: side by
      side when the column is wide (one market), book on top when it is narrow (several). -->
@@ -107,6 +128,8 @@
       <h1 class="title"></h1>
       <span class="market-info muted"></span>
     </div>
+    <!-- Only in a delta-hedging round: the market's fair value, and its greeks while shown. -->
+    <div class="greeks muted"></div>
 
     <div class="market-body">
       <section class="panel book-panel">

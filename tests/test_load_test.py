@@ -88,6 +88,32 @@ def test_each_problem_fails_its_check(change, wanted):
     assert wanted in failure
 
 
+def round_results():
+    results = good_results()
+    results.round_expected = True
+    results.round_settled = True
+    results.round_position_sum = 0
+    results.round_pnl_sum = 0
+    return results
+
+
+def test_a_good_round_passes_its_checks():
+    assert failed_checks(round_results()) == []
+
+
+@pytest.mark.parametrize("change, wanted", [
+    (lambda r: setattr(r, "round_settled", False), "settled"),
+    (lambda r: setattr(r, "round_position_sum", 3), "round positions"),
+    (lambda r: setattr(r, "round_pnl_sum", -2.5), "round PnL"),
+])
+def test_each_round_problem_fails_its_check(change, wanted):
+    results = round_results()
+    change(results)
+
+    (failure,) = failed_checks(results)
+    assert wanted in failure
+
+
 def test_a_run_that_stopped_early_fails():
     # e.g. the admin was refused: the end-of-run numbers were never filled in.
     results = load_test.Results()
@@ -105,10 +131,11 @@ def free_port():
         return probe.getsockname()[1]
 
 
-@pytest.fixture
-def server_url():
-    """A real uvicorn server (like the one on Render) running in a background thread."""
-    app = create_app(Room(code="1234", exchange=Exchange()), admin_secret=SECRET)
+def run_server(round_interval=1.0):
+    """A real uvicorn server (like the one on Render) running in a background thread. Yields
+    its address."""
+    app = create_app(Room(code="1234", exchange=Exchange()), admin_secret=SECRET,
+                     round_interval=round_interval)
     port = free_port()
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
@@ -122,12 +149,38 @@ def server_url():
     thread.join(timeout=10)
 
 
+@pytest.fixture
+def server_url():
+    yield from run_server()
+
+
+@pytest.fixture
+def fast_round_server_url():
+    """A server whose round clock moves 50 times a second, so a 1-minute round takes ~1 s."""
+    yield from run_server(round_interval=0.02)
+
+
 def test_a_short_load_test_passes(server_url):
     args = load_test.parse_args([server_url, "--bots", "5", "--seconds", "4",
-                                 "--interval", "0.2", "--forced-seconds", "2", "--seed", "1"])
+                                 "--interval", "0.2", "--forced-seconds", "2", "--seed", "1",
+                                 "--round-minutes", "0"])
 
     results = asyncio.run(load_test.run(args, SECRET))
 
     assert failed_checks(results) == [], results.errors
     assert results.forced_expected == 4  # every bot except the market maker
     assert sum(results.actions.values()) > 20
+    assert not results.round_expected
+
+
+def test_a_short_load_test_with_a_delta_hedging_round_passes(fast_round_server_url):
+    # The round runs beside the Trade or Tighten market; the house quotes all its markets.
+    args = load_test.parse_args([fast_round_server_url, "--bots", "5", "--seconds", "4",
+                                 "--interval", "0.1", "--forced-seconds", "2", "--seed", "1",
+                                 "--round-minutes", "1"])
+
+    results = asyncio.run(load_test.run(args, SECRET))
+
+    assert failed_checks(results) == [], results.errors
+    assert results.round_expected
+    assert results.house_trades > 0  # bots traded with the house

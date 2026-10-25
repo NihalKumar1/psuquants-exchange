@@ -375,6 +375,34 @@ def test_hedging_error_before_the_first_move_is_zero_for_option_holders():
     assert ex.hedging_error("SPX", "alice") == 0
 
 
+def test_each_move_keeps_the_net_delta_every_trader_carried_into_it():
+    # For the review chart's net-delta line (SPEC Q177).
+    ex = started(rng=ScriptedNormal(0.5, -0.5))
+    ex.step_round("SPX")                      # nobody holds anything yet
+    trade(ex, "SPX-C-100", "alice", "bob", 8, 10)
+    delta = ex.net_delta("SPX", "alice")
+    ex.step_round("SPX")
+
+    carried = ex.rounds["SPX"].carried
+    assert len(carried) == 2
+    assert carried[0] == {}
+    assert carried[1]["alice"] == pytest.approx(delta)
+    assert carried[1]["bob"] == pytest.approx(-delta)
+
+
+def test_greeks_at_an_earlier_step_use_that_steps_price_and_time_left():
+    ex = started(rng=ScriptedNormal(*[0.5] * 10))
+    for _ in range(10):
+        ex.step_round("SPX")
+    round_ = ex.rounds["SPX"]
+    move_4 = round_.history[3]
+
+    assert round_.greeks_at("SPX-C-100", move_4.price, 4) == \
+        black_scholes("call", move_4.price, 100, 0.2, 56 / 60)
+    assert round_.greeks_at("SPX", move_4.price, 4).value == move_4.price
+    assert round_.greeks_at("SPX-C-100", round_.fair_price, 10) == round_.greeks("SPX-C-100")
+
+
 # --- The greeks toggle -------------------------------------------------------------------------
 
 

@@ -103,14 +103,20 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   Rounds in views: every update has `rounds` (`round_view`: fair price, moves left, options;
   `greeks` only while shown) and `my_rounds` (own net delta/gamma/hedging error, only while
   shown). The realized vol is admin-only (`round_admin_view`, with the house's PnL).
-- `exchange/server/export.py`: the export zip (trades/orders/events CSVs + events.json), with US
+  The review page's `review` carries `round` for a market in a round (`round_chart_view`: the
+  fair-value line and the picked trader's net delta, from `DeltaRound.history`, `greeks_at` and
+  `carried`, the delta each trader carried into each move); `review.js` draws the delta on a
+  second axis at the right.
+- `exchange/server/export.py`: the export zip (trades/orders/events CSVs + events.json, plus
+  moves.csv and rounds.csv when the game had a delta-hedging round), with US
   Eastern times and names in place of trader ids. Needs `tzdata` on Windows.
 - `exchange/server/main.py`: the app uvicorn runs (`build_app(environ)` reads `ADMIN_SECRET`).
 - `exchange/server/static/`: trader page, admin page, review page (`review.js` draws the chart as
   plain SVG; its price axis has instructor Min/Max boxes, remembered per market in localStorage;
   a Review | Leaderboard switch in its top bar swaps the chart and trades for the leaderboard),
   and `common.js` helpers (plain HTML/JS/CSS, no build step).
-- `scripts/load_test.py`: the 60-bot load test (also imported by `tests/test_load_test.py`).
+- `scripts/load_test.py`: the 60-bot load test (also imported by `tests/test_load_test.py`). It
+  runs a 2-minute delta-hedging round beside the market (`--round-minutes 0` skips it).
   `scripts/demo_fill.py` (gitignored) fills a book for screenshots.
 - `render.yaml`: the Render Blueprint (free plan, Python 3.14.4, one worker).
 - Tests: enter `TestClient` with `with` so all sockets share one event loop (like uvicorn).
