@@ -49,6 +49,9 @@ class MarketConfig:
     # The answer, entered in advance so the market settles itself when time is up (Q221).
     # Admin-only: never sent to a trader's browser.
     true_value: int | None = None
+    # Optional price limits (SPEC Q204): no order may be priced outside them. None = no limit.
+    min_price: int | None = None
+    max_price: int | None = None
 
 
 @dataclass(eq=False)  # eq=False: two orders are the same only if they are the same object

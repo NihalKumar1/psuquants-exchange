@@ -64,6 +64,8 @@ class Room:
             trader_id = events[0].trader_id
         elif existing in self.exchange.kicked:
             raise ValueError("you were removed from this game")
+        elif existing in self.exchange.bots:  # no connection, but nobody may take it over
+            raise ValueError("that name belongs to a bot")
         elif existing in self.connections:
             raise ValueError("that name is taken by someone who is connected")
         else:
@@ -227,12 +229,17 @@ class Room:
             return exchange.add_trading_time(message["market_id"], message["seconds"])
         if kind == "end_trading":  # the admin's "End now"
             return exchange.end_trading(message["market_id"], ended_by="admin")
+        if kind == "start_bots":  # "kind": "maker" or "taker"
+            return exchange.start_bots(message["kind"])
+        if kind == "stop_bots":
+            return exchange.stop_bots(message["kind"])
         raise ValueError(f"unknown command {kind!r}")
 
 
 def market_config(market_id, message):
     """The market settings from an admin message. Scripts written before contract
-    multipliers existed (e.g. the load test) don't send dollars_per_point; it is then 1."""
+    multipliers existed (e.g. the load test) don't send dollars_per_point; it is then 1. Price
+    limits are optional too: missing or null means no limit."""
     return MarketConfig(
         market_id=market_id,
         title=message["title"],
@@ -245,4 +252,6 @@ def market_config(market_id, message):
         # when it runs out.
         trading_seconds=message.get("trading_seconds"),
         true_value=message.get("true_value"),
+        min_price=message.get("min_price"),
+        max_price=message.get("max_price"),
     )

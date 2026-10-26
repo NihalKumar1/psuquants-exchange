@@ -69,6 +69,8 @@ def market_view(exchange, market_id, depth=BOOK_DEPTH):
         "trading_seconds": market.config.trading_seconds,
         "trading_seconds_left": exchange.trading_seconds_left(market_id),
         "time_up": market.time_up,
+        "min_price": market.config.min_price,  # price limits: None = no limit
+        "max_price": market.config.max_price,
         "status": market.status.value,
         "bids": levels_view(exchange, market, Side.BUY, depth),
         "asks": levels_view(exchange, market, Side.SELL, depth),
@@ -344,6 +346,7 @@ def admin_message(room):
         "type": "admin_state",
         "room_code": room.code,
         "joining_locked": exchange.joining_locked,
+        "bots_on": exchange.bots_on,
         "starting_equity": exchange.starting_equity,
         "unexported": room.has_unexported_changes(),  # Reset warns if this is True
         "info_drops": [
@@ -364,6 +367,7 @@ def admin_message(room):
                 "trader_id": trader_id,
                 "name": name,
                 "connected": trader_id in room.connections,
+                "bot": exchange.bots.get(trader_id),  # "maker", "taker" or None
                 "kicked": trader_id in exchange.kicked,
                 "markets": {
                     market_id: position_view(market, trader_id)

@@ -78,16 +78,39 @@ function render() {
   const edited = editingMarketId && state.markets[editingMarketId];
   if (editingMarketId && (!edited || edited.status !== "created")) resetMarketForm();
 
+  renderBots();
   renderMarkets();
   renderTraders();
   renderInfoDrops();
+}
+
+function renderBots() {
+  for (const kind of ["maker", "taker"]) {
+    const on = state.bots_on[kind];
+    document.getElementById(`${kind}s-status`).textContent = on ? "· on" : "· off";
+    document.getElementById(`toggle-${kind}s`).textContent = on ? "Turn off" : "Turn on";
+  }
+}
+
+for (const kind of ["maker", "taker"]) {
+  document.getElementById(`toggle-${kind}s`).addEventListener("click", () =>
+    send({ type: state.bots_on[kind] ? "stop_bots" : "start_bots", kind }));
+}
+
+function rangeText(market) {
+  // A market's price limits: "0–100", "≥ 30", "≤ 180", or "—" for none.
+  const low = market.min_price, high = market.max_price;
+  if (low === null && high === null) return "—";
+  if (low === null) return `≤ ${number(high)}`;
+  if (high === null) return `≥ ${number(low)}`;
+  return `${number(low)}–${number(high)}`;
 }
 
 function renderMarkets() {
   const markets = Object.values(state.markets);
   const tbody = document.querySelector("#markets tbody");
   if (markets.length === 0) {
-    tbody.replaceChildren(emptyRow(10, "No markets yet. Create one on the left."));
+    tbody.replaceChildren(emptyRow(11, "No markets yet. Create one on the left."));
     return;
   }
   const rows = markets.map((market) => {
@@ -96,14 +119,14 @@ function renderMarkets() {
     status.className = `pill ${market.status}`;
     const row = tableRow([
       market.title, status, number(market.tick_size), number(market.max_position),
-      money(market.dollars_per_point),
+      money(market.dollars_per_point), rangeText(market),
       number(market.best_bid), number(market.best_ask), number(market.last_price),
       number(market.mark), marketActions(market),
     ]);
     row.cells[0].title = `${market.title} (${market.market_id})`;
     row.cells[0].className = "title";
-    for (const i of [2, 3, 4, 5, 6, 7, 8]) row.cells[i].className = "num";
-    row.cells[9].className = "actions";
+    for (const i of [2, 3, 4, 5, 6, 7, 8, 9]) row.cells[i].className = "num";
+    row.cells[10].className = "actions";
     return row;
   });
   tbody.replaceChildren(...rows);
@@ -240,7 +263,7 @@ function renderTraders() {
     return;
   }
   const rows = state.traders.map((trader) => {
-    const status = trader.kicked ? "Removed" : trader.connected ? "Online" : "Offline";
+    const status = trader.kicked ? "Removed" : trader.bot ? "Bot" : trader.connected ? "Online" : "Offline";
     const cells = [trader.name, status];
     for (const market of markets) {
       const mine = trader.markets[market.market_id];
@@ -249,7 +272,7 @@ function renderTraders() {
     cells.push(pnlCell(trader.total, signedMoney, money), money(trader.total.equity),
       traderActions(trader));
     const row = tableRow(cells);
-    row.cells[1].className = trader.kicked ? "down" : trader.connected ? "up" : "muted";
+    row.cells[1].className = trader.kicked ? "down" : trader.bot ? "" : trader.connected ? "up" : "muted";
     for (let i = 2; i < cells.length - 1; i++) row.cells[i].className = "num";
     row.cells[cells.length - 1].className = "actions";
     if (trader.kicked) row.classList.add("kicked");
@@ -349,14 +372,17 @@ const FORM_FIELDS = {
   forced_trade_size: "f-forced-size",
   forced_trade_seconds: "f-forced-seconds",
   dollars_per_point: "f-dollars",
+  min_price: "f-min-price",
+  max_price: "f-max-price",
 };
 // Optional settings: blank sends null. The trading time is typed in minutes, sent in seconds.
-const OPTIONAL_FIELDS = { trading_seconds: "f-trading-minutes", true_value: "f-true-value" };
+const TIMER_FIELDS = { trading_seconds: "f-trading-minutes", true_value: "f-true-value" };
+const OPTIONAL_SETTINGS = ["min_price", "max_price"];  // blank = no limit (sent as null)
 
 function startEditing(market) {
   editingMarketId = market.market_id;
   for (const [setting, id] of Object.entries(FORM_FIELDS)) {
-    document.getElementById(id).value = market[setting];
+    document.getElementById(id).value = market[setting] ?? "";
   }
   document.getElementById("f-trading-minutes").value =
     market.trading_seconds === null ? "" : market.trading_seconds / 60;
@@ -382,9 +408,11 @@ document.getElementById("market-form").addEventListener("submit", (event) => {
     : { type: "create_market" };
   for (const [setting, id] of Object.entries(FORM_FIELDS)) {
     const value = document.getElementById(id).value;
-    command[setting] = setting === "title" ? value : Number(value);
+    if (setting === "title") command[setting] = value;
+    else if (OPTIONAL_SETTINGS.includes(setting) && value.trim() === "") command[setting] = null;
+    else command[setting] = Number(value);
   }
-  for (const [setting, id] of Object.entries(OPTIONAL_FIELDS)) {
+  for (const [setting, id] of Object.entries(TIMER_FIELDS)) {
     const text = document.getElementById(id).value.trim();
     if (text !== "" && !Number.isFinite(Number(text))) {
       showMessage(setting === "true_value" ? "The true value must be a number (or blank)."

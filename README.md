@@ -74,7 +74,8 @@ $env:ADMIN_SECRET="the-server's-admin-password"
 python scripts/load_test.py https://psuquants-exchange.onrender.com
 ```
 
-(Use `http://127.0.0.1:8000` to test a server on your laptop. `--help` lists the options.)
+(Use `http://127.0.0.1:8000` to test a server on your laptop. `--help` lists the options;
+`--house-bots` also turns on the exchange's own maker and taker bots.)
 
 It prints **RESULT: PASS** when all of these hold:
 - 95% of commands get their reply within **750 ms**

@@ -40,6 +40,8 @@ waits out the timer and then ends the window itself, as if it were one more comm
 So does the trading timer (SPEC Q219-Q227): a clock task checks every clock_interval seconds
 for markets whose trading time is up, and ends trading in them (halting, or settling at a true
 value entered in advance).
+So do the bots (SPEC Q209-Q218): while the admin has the makers (or takers) on, a clock task
+calls Exchange.step_bots once every bot_interval seconds (1 s), as one more command.
 """
 
 import asyncio
@@ -53,6 +55,8 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from exchange.engine import (
+    BotsStarted,
+    BotsStopped,
     ForcedTradeStarted,
     InfoDropMarked,
     JoiningLocked,
@@ -77,9 +81,10 @@ NO_CACHE = {"Cache-Control": "no-cache"}
 ADMIN_ONLY_EVENTS = (InfoDropMarked, JoiningLocked, JoiningUnlocked)
 
 
-def create_app(room, admin_secret, review_interval=1.0, clock_interval=0.25):
+def create_app(room, admin_secret, review_interval=1.0, bot_interval=1.0, clock_interval=0.25):
     # Running tasks, kept here so they aren't garbage collected:
     timers = set()  # forced-trade timers
+    bot_clocks = {}  # "maker" / "taker" -> the task running those bots (only while on)
     review_pushes = set()  # a scheduled push to the review pages (at most one at a time)
     review_push_pending = False
     last_review_push = 0.0  # event loop time of the last push
@@ -89,7 +94,7 @@ def create_app(room, admin_secret, review_interval=1.0, clock_interval=0.25):
         trading_clock = asyncio.create_task(end_trading_when_time_is_up())
         yield
         # The server is stopping: leave nothing behind.
-        for task in [*timers, *review_pushes, trading_clock]:
+        for task in [*timers, *review_pushes, *bot_clocks.values(), trading_clock]:
             task.cancel()
 
     app = FastAPI(lifespan=lifespan)
@@ -254,6 +259,10 @@ def create_app(room, admin_secret, review_interval=1.0, clock_interval=0.25):
                     await remove(event.trader_id)
                 if isinstance(event, ForcedTradeStarted):
                     start_timer(event.market_id)
+                if isinstance(event, BotsStarted):
+                    start_bot_clock(event.kind)
+                if isinstance(event, BotsStopped):
+                    stop_bot_clock(event.kind)
             if any(not isinstance(event, ADMIN_ONLY_EVENTS) for event in events):
                 await broadcast(events)
             await tell_admins()
@@ -264,6 +273,8 @@ def create_app(room, admin_secret, review_interval=1.0, clock_interval=0.25):
         # Market ids start again at m1, so an old timer must not end the new game's window.
         for timer in list(timers):
             timer.cancel()
+        for kind in list(bot_clocks):  # the new game starts with the bots off
+            stop_bot_clock(kind)
         for trader_id, token in room.reset():
             connection = room.connections[trader_id]
             delivered = (await send(connection, welcome_message(trader_id, token))
@@ -301,6 +312,32 @@ def create_app(room, admin_secret, review_interval=1.0, clock_interval=0.25):
                     events = room.exchange.end_trading(market_id, ended_by="timer")
                     await broadcast(events)
                 await tell_admins()
+
+    def start_bot_clock(kind):
+        clock = asyncio.create_task(run_bots(kind))
+        bot_clocks[kind] = clock
+        clock.add_done_callback(lambda task: forget_bot_clock(kind, task))
+
+    def stop_bot_clock(kind):
+        clock = bot_clocks.pop(kind, None)
+        if clock is not None:
+            clock.cancel()
+
+    def forget_bot_clock(kind, task):
+        if bot_clocks.get(kind) is task:  # not a newer clock started after an off/on
+            del bot_clocks[kind]
+
+    async def run_bots(kind):
+        """Step the makers (or takers) once per bot_interval until they are turned off."""
+        while True:
+            await asyncio.sleep(bot_interval)
+            async with lock:
+                if not room.exchange.bots_on[kind]:
+                    return
+                events = room.exchange.step_bots(kind)
+                if events:
+                    await broadcast(events)
+                    await tell_admins()
 
     async def remove(trader_id):
         """Tell a kicked trader's browser, then close it."""

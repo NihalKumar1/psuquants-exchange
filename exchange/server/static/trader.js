@@ -148,12 +148,18 @@ function renderColumn(column, market, mine) {
   status.className = `status pill ${market.status}`;
   // On the title line, so it is kept short; hovering shows the hint too.
   const info = `Tick ${number(market.tick_size)}  ·  Max position ${number(market.max_position)}` +
-    `  ·  ${perPoint(market.dollars_per_point)}`;
+    `  ·  ${perPoint(market.dollars_per_point)}` + priceRangeText(market);
   part(column, "market-info").textContent = info;
   part(column, "market-info").title = info + "  ·  Click the best bid or offer to trade";
   renderTradingClock(part(column, "trading-clock"), market);
   for (const name of ["buy-price", "sell-price", "quote-bid", "quote-ask", "width-input", "mm-bid", "mm-ask"]) {
     part(column, name).step = market.tick_size;
+  }
+  // The price limits, if any (the server refuses prices outside them; this only guides the
+  // boxes' arrows). Not for the width, which isn't a price.
+  for (const name of ["buy-price", "sell-price", "quote-bid", "quote-ask", "mm-bid", "mm-ask"]) {
+    part(column, name).min = market.min_price ?? "";
+    part(column, name).max = market.max_price ?? "";
   }
 
   // While the market is in Trade or Tighten, its panel replaces order entry.
@@ -177,6 +183,15 @@ function renderTradingClock(clock, market) {
     clock.textContent = tradingClockText(market.market_id);
   }
   clock.title = "Trading time left: when it runs out, the market stops trading";
+}
+
+function priceRangeText(market) {
+  // "  ·  Prices 0–100" (or "≥ 30", "≤ 180"), or nothing when the market has no price limits.
+  const low = market.min_price, high = market.max_price;
+  if (low === null && high === null) return "";
+  if (low === null) return `  ·  Prices ≤ ${number(high)}`;
+  if (high === null) return `  ·  Prices ≥ ${number(low)}`;
+  return `  ·  Prices ${number(low)}–${number(high)}`;
 }
 
 function renderTradeOrTighten(column, market, mine) {

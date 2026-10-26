@@ -655,6 +655,9 @@ tbody tr:last-child td { border-bottom: none; }
 /* The true value entered in advance: dots, not digits, in case the admin page is projected. */
 input.secret { -webkit-text-security: disc; }
 .action-row .trading-clock { font-family: var(--mono); min-width: 3.5em; }
+.bot-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.bot-row .hint { margin-top: 2px; }
+.bot-row button { padding: 5px 12px; font-size: 12px; flex-shrink: 0; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-buttons { display: flex; gap: 8px; }
 .form-buttons button { flex: 1; }
