@@ -293,6 +293,8 @@ kbd {
 }
 .market-head h1 { font-size: 16px; flex: 0 1 auto; }
 .market-head .pill { flex-shrink: 0; white-space: nowrap; }
+.market-head .trading-clock { flex-shrink: 0; font: 600 14px var(--mono); color: var(--accent); }
+.market-head .trading-clock.done { color: var(--ask); }
 .market-info { margin-left: auto; font-size: 12px; flex: 0 3 auto; }  /* gives way before the title */
 
 .market-body {
@@ -650,6 +652,9 @@ tbody tr:last-child td { border-bottom: none; }
   .admin { grid-template-columns: 1fr; }
 }
 
+/* The true value entered in advance: dots, not digits, in case the admin page is projected. */
+input.secret { -webkit-text-security: disc; }
+.action-row .trading-clock { font-family: var(--mono); min-width: 3.5em; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .form-buttons { display: flex; gap: 8px; }
 .form-buttons button { flex: 1; }
@@ -659,7 +664,7 @@ tbody tr:last-child td { border-bottom: none; }
 
 .scroll-x { overflow-x: auto; }
 #markets td.title { max-width: 260px; }
-.action-row { display: flex; align-items: center; gap: 6px; }
+.action-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .action-row button { padding: 5px 10px; font-size: 12px; }
 .settle-value { width: 110px; padding: 4px 8px; }
 .action-row .tot-status { color: var(--muted); font-size: 12px; }

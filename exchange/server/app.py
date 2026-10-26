@@ -37,6 +37,9 @@ whole game as a zip (see export.py).
 
 The forced-trade timer also lives here: when the admin starts a forced-trade window, the server
 waits out the timer and then ends the window itself, as if it were one more command.
+So does the trading timer (SPEC Q219-Q227): a clock task checks every clock_interval seconds
+for markets whose trading time is up, and ends trading in them (halting, or settling at a true
+value entered in advance).
 """
 
 import asyncio
@@ -74,7 +77,7 @@ NO_CACHE = {"Cache-Control": "no-cache"}
 ADMIN_ONLY_EVENTS = (InfoDropMarked, JoiningLocked, JoiningUnlocked)
 
 
-def create_app(room, admin_secret, review_interval=1.0):
+def create_app(room, admin_secret, review_interval=1.0, clock_interval=0.25):
     # Running tasks, kept here so they aren't garbage collected:
     timers = set()  # forced-trade timers
     review_pushes = set()  # a scheduled push to the review pages (at most one at a time)
@@ -83,8 +86,10 @@ def create_app(room, admin_secret, review_interval=1.0):
 
     @asynccontextmanager
     async def lifespan(app):
+        trading_clock = asyncio.create_task(end_trading_when_time_is_up())
         yield
-        for task in list(timers | review_pushes):  # the server is stopping: leave nothing behind
+        # The server is stopping: leave nothing behind.
+        for task in [*timers, *review_pushes, trading_clock]:
             task.cancel()
 
     app = FastAPI(lifespan=lifespan)
@@ -284,6 +289,18 @@ def create_app(room, admin_secret, review_interval=1.0):
             events = room.exchange.end_forced_trade(market_id, ended_by="timer")
             await broadcast(events)
             await tell_admins()
+
+    async def end_trading_when_time_is_up():
+        """Every clock_interval, end trading in each market whose trading time is up."""
+        while True:
+            await asyncio.sleep(clock_interval)
+            if not room.exchange.due_trading_ends():  # the usual case: nothing to do
+                continue
+            async with lock:
+                for market_id in room.exchange.due_trading_ends():  # still due (checked again)
+                    events = room.exchange.end_trading(market_id, ended_by="timer")
+                    await broadcast(events)
+                await tell_admins()
 
     async def remove(trader_id):
         """Tell a kicked trader's browser, then close it."""

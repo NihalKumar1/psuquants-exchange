@@ -55,6 +55,10 @@
             <label>Forced-trade timer (s) <input id="f-forced-seconds" type="number" min="1" step="1" required></label>
             <label title="Contract multiplier: PnL in dollars = PnL in points × this. Pick it so a typical miss costs about the same in every market (e.g. 0.01 for a ~100,000 market, 0.2 for a ~7,000 one).">$ per point
               <input id="f-dollars" type="number" min="0" step="any" value="1" required></label>
+            <label title="Optional: when this runs out, the market halts by itself (a halt pauses it). Starts when continuous trading starts. Blank = no timer.">Trading time (min)
+              <input id="f-trading-minutes" type="number" min="0" step="any" placeholder="none"></label>
+            <label title="Optional: enter the answer now and the market settles itself at it when the trading time runs out. Never sent to students; hidden on screen.">True value
+              <input id="f-true-value" class="secret" inputmode="numeric" autocomplete="off" placeholder="settle by hand"></label>
           </div>
           <div class="form-buttons">
             <button id="market-submit" type="submit" class="primary">Create market</button>

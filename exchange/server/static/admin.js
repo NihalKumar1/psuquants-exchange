@@ -43,6 +43,7 @@ function handle(message) {
   } else if (message.type === "admin_state") {
     state = message;
     setCountdowns(state.markets);
+    setTradingClocks(state.markets);
     if (resetFormOnNextState) resetMarketForm();
     render();
   } else if (message.type === "admin_error") {
@@ -114,6 +115,9 @@ function marketActions(market) {
   const box = document.createElement("div");
   box.className = "action-row";
   const tot = market.tot;
+  // The trading timer and a true value entered in advance (SPEC Q219-Q227), before the buttons.
+  if (market.trading_seconds_left !== null || market.time_up) box.append(tradingClock(market));
+  if (market.true_value !== null && market.status !== "settled") box.append(trueValueChip(market));
   if (market.status === "created") {
     // Two ways to start: the Trade or Tighten opening, or straight into continuous trading.
     box.append(
@@ -159,6 +163,51 @@ function marketActions(market) {
     box.textContent = `Settled at ${number(market.settlement_value)}`;
   }
   return box;
+}
+
+function tradingClock(market) {
+  // "4:05" counting down (or "Time's up"), with +1 min and End now while the clock runs.
+  const box = document.createElement("span");
+  box.className = "action-row";
+  const clock = document.createElement("b");
+  clock.className = "trading-clock";
+  if (market.time_up) {
+    clock.textContent = "Time's up";
+  } else {
+    clock.dataset.tradingClock = market.market_id;
+    clock.textContent = tradingClockText(market.market_id);
+  }
+  box.append(clock);
+  if (market.trading_seconds_left !== null) {
+    box.append(
+      button("+1 min", "ghost", () =>
+        send({ type: "add_trading_time", market_id: market.market_id, seconds: 60 })),
+      button("End now", "ghost", () => endTrading(market)),
+    );
+  }
+  return box;
+}
+
+const revealedTrueValues = new Set();  // markets whose true value the admin clicked to show
+
+function trueValueChip(market) {
+  // The true value entered in advance, hidden (●●●●) until clicked, so it doesn't show up on
+  // the projector by accident.
+  const shown = revealedTrueValues.has(market.market_id);
+  const chip = button(shown ? `Settles at ${number(market.true_value)}` : "Settles at ●●●●",
+    "ghost secret-chip", () => {
+      if (shown) revealedTrueValues.delete(market.market_id);
+      else revealedTrueValues.add(market.market_id);
+      renderMarkets();
+    });
+  chip.title = shown ? "Click to hide" : "Click to show the true value it settles at when time is up";
+  return chip;
+}
+
+function endTrading(market) {
+  const after = market.true_value !== null ? "halts and settles at the true value you entered" : "halts";
+  if (!confirm(`End trading in "${market.title}" now? The market ${after}.`)) return;
+  send({ type: "end_trading", market_id: market.market_id });
 }
 
 function totStatus(text) {
@@ -301,12 +350,17 @@ const FORM_FIELDS = {
   forced_trade_seconds: "f-forced-seconds",
   dollars_per_point: "f-dollars",
 };
+// Optional settings: blank sends null. The trading time is typed in minutes, sent in seconds.
+const OPTIONAL_FIELDS = { trading_seconds: "f-trading-minutes", true_value: "f-true-value" };
 
 function startEditing(market) {
   editingMarketId = market.market_id;
   for (const [setting, id] of Object.entries(FORM_FIELDS)) {
     document.getElementById(id).value = market[setting];
   }
+  document.getElementById("f-trading-minutes").value =
+    market.trading_seconds === null ? "" : market.trading_seconds / 60;
+  document.getElementById("f-true-value").value = market.true_value ?? "";
   document.getElementById("market-form-heading").textContent = `Edit market: ${market.title}`;
   document.getElementById("market-submit").textContent = "Save changes";
   document.getElementById("market-cancel-edit").hidden = false;
@@ -329,6 +383,17 @@ document.getElementById("market-form").addEventListener("submit", (event) => {
   for (const [setting, id] of Object.entries(FORM_FIELDS)) {
     const value = document.getElementById(id).value;
     command[setting] = setting === "title" ? value : Number(value);
+  }
+  for (const [setting, id] of Object.entries(OPTIONAL_FIELDS)) {
+    const text = document.getElementById(id).value.trim();
+    if (text !== "" && !Number.isFinite(Number(text))) {
+      showMessage(setting === "true_value" ? "The true value must be a number (or blank)."
+        : "The trading time must be a number of minutes (or blank).");
+      return;
+    }
+    if (text === "") command[setting] = null;
+    else if (setting === "trading_seconds") command[setting] = Math.round(Number(text) * 60);
+    else command[setting] = Number(text);
   }
   resetFormOnNextState = true;  // cleared by an admin_error, so a mistake can be fixed
   send(command);

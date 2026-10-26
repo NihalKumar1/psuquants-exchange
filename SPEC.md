@@ -322,6 +322,18 @@ Markets priced near 7,000 and near 120,000 were added up point for point, so the
 158. **Ties share a rank** (1, 2, 2, 4), listed in name order.
 159. The leaderboard is built in the same PR as the trader features and equity (PR #7).
 
+### Answered while planning the trading timer (2026-10-25)
+The exec asked whether markets should end on a timer instead of the instructor stopping them by hand, and approved: a trading timer that halts the market, plus an optional true value entered in advance so the market settles itself. (Numbered from 219: the delta-hedging and bots branches use 160-218.) Details marked *(proposed)* were chosen while building and await the instructor's review.
+219. A market may have a **trading time**, set by the admin when creating it (or editing it before it opens), in minutes. Blank = no timer, as before.
+220. When the trading time runs out, the market **halts by itself**, and every screen says **"Time's up"**.
+221. The admin may enter the **true value in advance**. If it is there when time runs out, the market **settles itself at it** right after halting. If it is blank, the market waits, halted, for the instructor to settle it by hand (as for Dice Night, where the answer isn't known until the dice are rolled).
+222. *(proposed)* The true value entered in advance is **admin-only**: it is never sent to a trader's browser. The admin page shows it as "Settles at ●●●●" until clicked, and the form box shows dots, in case the admin page is on the projector. It is in the event log and the export (after the game).
+223. *(proposed)* The clock **starts when continuous trading starts** (Open directly, or the end of the forced trade), so Trade or Tighten doesn't eat into it.
+224. *(proposed)* A **halt pauses the clock**; Resume continues it. The admin can add time (**+1 min**) or **End now** (the same as time running out: halt, then settle if there is a true value; it asks to confirm).
+225. *(proposed)* After time is up the admin can **Settle** (any value, as always) or **Resume**, and trading then carries on with no clock. The admin can also settle by hand at any time before, at any value.
+226. *(proposed)* Traders see the time left next to the market's title, counting down on their own laptop's clock (like the forced-trade timer), "(paused)" while halted, and "Time's up" in red at the end.
+227. *(proposed)* The server checks four times a second for markets whose time is up. A game without timers exports as it always did.
+
 ## Build order (one milestone at a time; tests pass and instructor reviews before moving on)
 1. Matching engine, positions, and PnL as pure Python with no web code, plus unit tests.
 2. FastAPI server, WebSockets, join with name + room code, and a minimal trader UI for one market in continuous trading.

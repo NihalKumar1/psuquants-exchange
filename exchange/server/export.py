@@ -28,6 +28,8 @@ from exchange.engine import (
 
 EASTERN = ZoneInfo("America/New_York")
 TRADER_ID_FIELDS = ("trader_id", "buyer_id", "seller_id")  # replaced by names in the export
+# Left out of events.csv when unset, so a game without them exports as it always did.
+OPTIONAL_FIELDS = ("trading_seconds", "true_value")
 
 
 def export_zip(exchange):
@@ -160,6 +162,7 @@ def events_table(exchange):
             f"{key}={'' if value is None else value}"
             for key, value in data.items()
             if key not in ("seq", "ts", "type", "market_id", "trader_id")
+            and not (key in OPTIONAL_FIELDS and value is None)
         )
         rows.append([event.seq, csv_time(event.ts), data["type"], event.market_id or "",
                      title_of(exchange, event.market_id), data.get("trader_id", ""), details])

@@ -44,6 +44,11 @@ class MarketConfig:
     # E-mini's $50 per index point). It lets markets priced near 7,000 and near 120,000 count
     # comparably in total PnL and equity (SPEC Q144).
     dollars_per_point: float = 1
+    # The trading timer (SPEC Q219): how long continuous trading lasts, or None for no clock.
+    trading_seconds: int | None = None
+    # The answer, entered in advance so the market settles itself when time is up (Q221).
+    # Admin-only: never sent to a trader's browser.
+    true_value: int | None = None
 
 
 @dataclass(eq=False)  # eq=False: two orders are the same only if they are the same object

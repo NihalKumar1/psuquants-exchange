@@ -125,6 +125,43 @@ function showCountdowns() {
   for (const element of document.querySelectorAll("[data-countdown]")) {
     element.textContent = countdownText(element.dataset.countdown);
   }
+  for (const element of document.querySelectorAll("[data-trading-clock]")) {
+    element.textContent = tradingClockText(element.dataset.tradingClock);
+  }
+}
+
+// --- Trading timer (SPEC Q219-Q227) -------------------------------------------------------
+// The same idea for each market's trading time: the server sends the seconds left, the page
+// counts down on its own clock. While the market is halted the clock is paused. Any element
+// with data-trading-clock="<market id>" shows the time left.
+
+const tradingClocks = {};  // market_id -> {deadline} (counting down) or {paused: seconds left}
+
+function setTradingClocks(markets) {
+  for (const market of Object.values(markets)) {
+    const secondsLeft = market.trading_seconds_left;
+    if (secondsLeft === null || secondsLeft === undefined) {
+      delete tradingClocks[market.market_id];
+    } else if (market.status === "open") {
+      tradingClocks[market.market_id] = { deadline: performance.now() + secondsLeft * 1000 };
+    } else {
+      tradingClocks[market.market_id] = { paused: secondsLeft };
+    }
+  }
+  showCountdowns();
+}
+
+function tradingClockText(marketId) {
+  // "4:05", "0:00", or "4:05 (paused)" while halted.
+  const clock = tradingClocks[marketId];
+  if (clock === undefined) return "";
+  if (clock.paused !== undefined) return `${minutesAndSeconds(clock.paused)} (paused)`;
+  return minutesAndSeconds((clock.deadline - performance.now()) / 1000);
+}
+
+function minutesAndSeconds(seconds) {
+  const whole = Math.max(0, Math.ceil(seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
 }
 
 setInterval(showCountdowns, 250);
