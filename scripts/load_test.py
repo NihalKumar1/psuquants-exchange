@@ -301,6 +301,11 @@ async def run(args, secret):
 
         market_id = await create_market(admin, args)
         await trade_or_tighten(admin, bots, market_id, args, rng, results)
+        if args.house_bots:  # the exchange's own maker and taker bots trade too
+            for kind in ("maker", "taker"):
+                await admin.do(lambda state, kind=kind: state["bots_on"][kind],
+                               type="start_bots", kind=kind)
+            print("Turned on the exchange's maker and taker bots")
 
         print(f"Continuous trading for {args.seconds} s "
               f"(each bot acts about every {args.interval} s)...")
@@ -478,6 +483,8 @@ def parse_args(argv):
     parser.add_argument("--tick", type=int, default=100)
     parser.add_argument("--forced-seconds", type=int, default=15,
                         help="the forced-trade timer")
+    parser.add_argument("--house-bots", action="store_true",
+                        help="also turn on the exchange's own maker and taker bots")
     parser.add_argument("--seed", type=int, default=None, help="repeat the same random choices")
     return parser.parse_args(argv)
 

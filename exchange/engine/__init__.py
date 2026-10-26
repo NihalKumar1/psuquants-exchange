@@ -3,6 +3,8 @@
 from .book import OrderBook
 from .events import (
     AuctionStarted,
+    BotsStarted,
+    BotsStopped,
     Event,
     ForcedTradeEnded,
     ForcedTradeStarted,
