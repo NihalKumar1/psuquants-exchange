@@ -37,6 +37,9 @@ whole game as a zip (see export.py).
 
 The forced-trade timer also lives here: when the admin starts a forced-trade window, the server
 waits out the timer and then ends the window itself, as if it were one more command.
+So does the trading timer (SPEC Q219-Q227): a clock task checks every clock_interval seconds
+for markets whose trading time is up, and ends trading in them (halting, or settling at a true
+value entered in advance).
 So do the bots (SPEC Q209-Q218): while the admin has the makers (or takers) on, a clock task
 calls Exchange.step_bots once every bot_interval seconds (1 s), as one more command.
 """
@@ -78,7 +81,7 @@ NO_CACHE = {"Cache-Control": "no-cache"}
 ADMIN_ONLY_EVENTS = (InfoDropMarked, JoiningLocked, JoiningUnlocked)
 
 
-def create_app(room, admin_secret, review_interval=1.0, bot_interval=1.0):
+def create_app(room, admin_secret, review_interval=1.0, bot_interval=1.0, clock_interval=0.25):
     # Running tasks, kept here so they aren't garbage collected:
     timers = set()  # forced-trade timers
     bot_clocks = {}  # "maker" / "taker" -> the task running those bots (only while on)
@@ -88,9 +91,10 @@ def create_app(room, admin_secret, review_interval=1.0, bot_interval=1.0):
 
     @asynccontextmanager
     async def lifespan(app):
+        trading_clock = asyncio.create_task(end_trading_when_time_is_up())
         yield
         # The server is stopping: leave nothing behind.
-        for task in list(timers | review_pushes | set(bot_clocks.values())):
+        for task in [*timers, *review_pushes, *bot_clocks.values(), trading_clock]:
             task.cancel()
 
     app = FastAPI(lifespan=lifespan)
@@ -296,6 +300,18 @@ def create_app(room, admin_secret, review_interval=1.0, bot_interval=1.0):
             events = room.exchange.end_forced_trade(market_id, ended_by="timer")
             await broadcast(events)
             await tell_admins()
+
+    async def end_trading_when_time_is_up():
+        """Every clock_interval, end trading in each market whose trading time is up."""
+        while True:
+            await asyncio.sleep(clock_interval)
+            if not room.exchange.due_trading_ends():  # the usual case: nothing to do
+                continue
+            async with lock:
+                for market_id in room.exchange.due_trading_ends():  # still due (checked again)
+                    events = room.exchange.end_trading(market_id, ended_by="timer")
+                    await broadcast(events)
+                await tell_admins()
 
     def start_bot_clock(kind):
         clock = asyncio.create_task(run_bots(kind))

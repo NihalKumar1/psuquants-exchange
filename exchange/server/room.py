@@ -224,6 +224,11 @@ class Room:
             return exchange.lock_joining()
         if kind == "unlock_joining":
             return exchange.unlock_joining()
+        # The trading timer (SPEC Q219-Q227)
+        if kind == "add_trading_time":
+            return exchange.add_trading_time(message["market_id"], message["seconds"])
+        if kind == "end_trading":  # the admin's "End now"
+            return exchange.end_trading(message["market_id"], ended_by="admin")
         if kind == "start_bots":  # "kind": "maker" or "taker"
             return exchange.start_bots(message["kind"])
         if kind == "stop_bots":
@@ -243,6 +248,10 @@ def market_config(market_id, message):
         forced_trade_size=message["forced_trade_size"],
         forced_trade_seconds=message["forced_trade_seconds"],
         dollars_per_point=message.get("dollars_per_point", 1),
+        # Optional (missing or null = none): the trading timer, and the true value to settle at
+        # when it runs out.
+        trading_seconds=message.get("trading_seconds"),
+        true_value=message.get("true_value"),
         min_price=message.get("min_price"),
         max_price=message.get("max_price"),
     )

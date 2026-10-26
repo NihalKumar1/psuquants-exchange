@@ -28,6 +28,8 @@ class MarketCreated(Event):
     forced_trade_size: int
     forced_trade_seconds: int
     dollars_per_point: float = 1  # 1 in logs saved before multipliers existed
+    trading_seconds: int | None = None  # the trading timer (None = no clock)
+    true_value: int | None = None  # entered in advance, for settling itself (admin-only)
     min_price: int | None = None  # price limits (None = none, as in logs saved before them)
     max_price: int | None = None
 
@@ -42,6 +44,8 @@ class MarketEdited(Event):
     forced_trade_size: int
     forced_trade_seconds: int
     dollars_per_point: float = 1
+    trading_seconds: int | None = None
+    true_value: int | None = None
     min_price: int | None = None
     max_price: int | None = None
 
@@ -59,6 +63,22 @@ class MarketHalted(Event):
 @dataclass(frozen=True, kw_only=True)
 class MarketResumed(Event):
     """Trading starts again after a halt, with the book as it was."""
+
+
+@dataclass(frozen=True, kw_only=True)
+class TradingTimeAdded(Event):
+    """The admin gave the trading timer more time (SPEC Q224)."""
+
+    seconds: int
+
+
+@dataclass(frozen=True, kw_only=True)
+class TradingTimeUp(Event):
+    """The trading timer ran out ("timer"), or the admin ended trading early ("admin"). A
+    MarketHalted follows (if the market was open), then a MarketSettled if the admin entered
+    the true value in advance."""
+
+    ended_by: str
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -286,6 +306,8 @@ EVENT_TYPES = {
         MarketHalted,
         MarketResumed,
         MarketSettled,
+        TradingTimeAdded,
+        TradingTimeUp,
         AuctionStarted,
         MarketMakerChosen,
         TradeOrTightenCancelled,

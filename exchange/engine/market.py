@@ -26,6 +26,8 @@ from .events import (
     OrderReduced,
     OrderRested,
     Rejected,
+    TradingTimeAdded,
+    TradingTimeUp,
     SideAssigned,
     SideChosen,
     TradeExecuted,
@@ -49,6 +51,12 @@ class Market:
         self.settlement_value = None
         self.opened_at = None  # when continuous trading started
         self.settled_at = None
+        # The trading timer (only with config.trading_seconds). While open the clock runs to
+        # trading_deadline; while halted it is paused with trading_left to go. Both None once
+        # time is up (time_up), once settled, or with no timer.
+        self.trading_deadline = None
+        self.trading_left = None
+        self.time_up = False
         # For the review chart: a PricePoint each time the mark or last price changes (until
         # settlement; the settlement value is drawn as a line of its own).
         self.price_history = []
@@ -112,6 +120,10 @@ class Market:
         if not self.widths:
             return None
         return min(self.widths, key=lambda entry: entry[1])
+
+    def trading_clock_running(self):
+        """True while the trading timer is counting down or paused by a halt."""
+        return self.trading_deadline is not None or self.trading_left is not None
 
     def forced_trade_deadline(self):
         """When the forced-trade window closes by itself."""
@@ -385,19 +397,36 @@ class Market:
                 max_position=event.max_position, forced_trade_size=event.forced_trade_size,
                 forced_trade_seconds=event.forced_trade_seconds,
                 dollars_per_point=event.dollars_per_point,
+                trading_seconds=event.trading_seconds, true_value=event.true_value,
                 min_price=event.min_price, max_price=event.max_price,
             )
         elif isinstance(event, MarketOpened):
             self.status = MarketStatus.OPEN
             self.opened_at = event.ts
+            if self.config.trading_seconds is not None:  # the trading timer starts
+                self.trading_deadline = event.ts + timedelta(seconds=self.config.trading_seconds)
         elif isinstance(event, MarketResumed):
             self.status = MarketStatus.OPEN
+            if self.trading_left is not None:  # the paused clock carries on
+                self.trading_deadline, self.trading_left = event.ts + self.trading_left, None
         elif isinstance(event, MarketHalted):
             self.status = MarketStatus.HALTED
+            if self.trading_deadline is not None:  # a halt pauses the clock
+                self.trading_left, self.trading_deadline = self.trading_deadline - event.ts, None
+        elif isinstance(event, TradingTimeAdded):
+            more = timedelta(seconds=event.seconds)
+            if self.trading_deadline is not None:
+                self.trading_deadline += more
+            else:
+                self.trading_left += more
+        elif isinstance(event, TradingTimeUp):
+            self.time_up = True
+            self.trading_deadline = self.trading_left = None
         elif isinstance(event, MarketSettled):
             self.status = MarketStatus.SETTLED
             self.settlement_value = event.settlement_value
             self.settled_at = event.ts
+            self.trading_deadline = self.trading_left = None
         elif isinstance(event, OrderAccepted):
             self.orders[event.order_id] = Order(
                 order_id=event.order_id, market_id=event.market_id, trader_id=event.trader_id,

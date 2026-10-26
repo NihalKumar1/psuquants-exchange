@@ -33,6 +33,8 @@ from .events import (
     Rejected,
     StartingEquitySet,
     TradeExecuted,
+    TradingTimeAdded,
+    TradingTimeUp,
     TraderJoined,
     TraderKicked,
     TraderRenamed,
@@ -112,6 +114,42 @@ class Exchange:
         if not is_whole_number(value):
             raise ValueError("the settlement value must be a whole number")
         return self._record([MarketSettled(market_id=market_id, settlement_value=value)])
+
+    # --- The trading timer (SPEC Q219-Q227) ------------------------------------------------
+
+    def end_trading(self, market_id, ended_by):
+        """Time is up ("timer", called by the server), or the admin ends trading early
+        ("admin"): the market halts, and settles at the true value if one was entered."""
+        market = self._market_with_clock(market_id)
+        events = [TradingTimeUp(market_id=market_id, ended_by=ended_by)]
+        if market.status is MarketStatus.OPEN:
+            events.append(MarketHalted(market_id=market_id))
+        if market.config.true_value is not None:
+            events.append(MarketSettled(market_id=market_id,
+                                        settlement_value=market.config.true_value))
+        return self._record(events)
+
+    def add_trading_time(self, market_id, seconds):
+        """Give the trading timer more time (the admin's "+1 min")."""
+        self._market_with_clock(market_id)
+        if not is_whole_number(seconds) or seconds < 1:
+            raise ValueError("added time must be a whole number of seconds, at least 1")
+        return self._record([TradingTimeAdded(market_id=market_id, seconds=seconds)])
+
+    def due_trading_ends(self):
+        """The open markets whose trading time is up. The server ends trading in each."""
+        now = self.clock()
+        return [market_id for market_id, market in self.markets.items()
+                if market.status is MarketStatus.OPEN
+                and market.trading_deadline is not None and market.trading_deadline <= now]
+
+    def _market_with_clock(self, market_id):
+        market = self.markets.get(market_id)
+        if market is None:
+            raise ValueError(f"unknown market {market_id!r}")
+        if not market.trading_clock_running():
+            raise ValueError("this market has no trading clock running")
+        return market
 
     def mark_info_drop(self, note=""):
         """Record that the instructor gave out information, for the review timeline."""
@@ -453,6 +491,7 @@ class Exchange:
                 max_position=event.max_position, forced_trade_size=event.forced_trade_size,
                 forced_trade_seconds=event.forced_trade_seconds,
                 dollars_per_point=event.dollars_per_point,
+                trading_seconds=event.trading_seconds, true_value=event.true_value,
                 min_price=event.min_price, max_price=event.max_price,
             )
             self.markets[event.market_id] = Market(config)
@@ -512,6 +551,16 @@ class Exchange:
             return None
         return max(0, (market.forced_trade_deadline() - self.clock()).total_seconds())
 
+    def trading_seconds_left(self, market_id):
+        """Seconds of trading left (0 once it's due; paused while halted), or None when the
+        market has no clock running."""
+        market = self.markets[market_id]
+        if market.trading_deadline is not None:
+            return max(0, (market.trading_deadline - self.clock()).total_seconds())
+        if market.trading_left is not None:
+            return market.trading_left.total_seconds()
+        return None
+
     def total_pnl(self, trader_id):
         """PnL in dollars over every market: each market's PnL (in its own price units, or
         points) times that market's dollars per point."""
@@ -546,6 +595,12 @@ def check_settings(config):
     is_number = isinstance(multiplier, (int, float)) and not isinstance(multiplier, bool)
     if not is_number or not math.isfinite(multiplier) or multiplier <= 0:
         raise ValueError("$ per point must be a number above 0")
+    if config.trading_seconds is not None and (
+            not is_whole_number(config.trading_seconds) or config.trading_seconds < 1):
+        raise ValueError("trading time must be a whole number of seconds, at least 1 "
+                         "(or blank for no timer)")
+    if config.true_value is not None and not is_whole_number(config.true_value):
+        raise ValueError("the true value must be a whole number (or blank)")
     for label, limit in (("min price", config.min_price), ("max price", config.max_price)):
         if limit is not None and not is_whole_number(limit):
             raise ValueError(f"{label} must be a whole number (or left blank for no limit)")
@@ -558,6 +613,8 @@ def check_settings(config):
         "forced_trade_size": config.forced_trade_size,
         "forced_trade_seconds": config.forced_trade_seconds,
         "dollars_per_point": config.dollars_per_point,
+        "trading_seconds": config.trading_seconds,
+        "true_value": config.true_value,
         "min_price": config.min_price,
         "max_price": config.max_price,
     }

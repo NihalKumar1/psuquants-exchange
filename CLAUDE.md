@@ -72,6 +72,11 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   from public information only. Bots are traders (`TraderJoined.bot`), listed in
   `Exchange.bots`; `Exchange.start_bots` / `stop_bots` are the admin's switches
   (`bots_on`), and the server calls `Exchange.step_bots(kind)` once a second while one is on.
+  Trading timer (SPEC Q219-Q227): `MarketConfig.trading_seconds` starts a clock at `MarketOpened`
+  (`Market.trading_deadline`; a halt pauses it into `trading_left`). The server's clock task
+  calls `Exchange.end_trading(market_id, "timer")` for each of `due_trading_ends()`: a
+  `TradingTimeUp` event, a halt, and a settle at `MarketConfig.true_value` if the admin entered
+  one (admin-only: views never send it to traders).
 - `exchange/server/room.py`: room code, join/rejoin tokens, live trader and admin connections,
   trader + admin commands, and `reset()` (new empty game, same code; connected traders are
   carried over with **new ids and tokens**, so the socket loop looks up `trader_of(connection)`
@@ -85,8 +90,9 @@ Deploy: `render.yaml` Blueprint (steps and the meeting-day checklist are in READ
   Trades carry `buyer_id`/`seller_id` so the page's Trades "Mine" switch can find its own (Q141).
 - `exchange/server/app.py`: FastAPI + WebSocket wiring (`create_app(room, admin_secret)`, used by
   tests). Traders on `/ws`, admin on `/admin/ws`. Also runs the forced-trade timer (an asyncio
-  task that ends the window when time is up; Reset cancels running timers), and a clock task
-  per bot kind while it is on (`bot_clocks`, one step every `bot_interval`; Reset stops them). A trader command
+  task that ends the window when time is up; Reset cancels running timers), the trading
+  clock (`end_trading_when_time_is_up`, every `clock_interval`), and a clock task per bot
+  kind while it is on (`bot_clocks`, one step every `bot_interval`; Reset stops them). A trader command
   may carry a `"ref"`; the server then replies `{"type": "done", "ref"}` once it has told
   everyone (used by the load test to time commands; browsers never send it). A `rejected` reply
   carries the command's `market_id`, `kind` and `side`, so the trader page can outline the form

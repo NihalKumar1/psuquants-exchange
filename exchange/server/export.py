@@ -29,7 +29,7 @@ from exchange.engine import (
 EASTERN = ZoneInfo("America/New_York")
 TRADER_ID_FIELDS = ("trader_id", "buyer_id", "seller_id")  # replaced by names in the export
 # Left out of events.csv when unset, so a game without them exports as it always did.
-OPTIONAL_FIELDS = ("min_price", "max_price", "bot")
+OPTIONAL_FIELDS = ("min_price", "max_price", "bot", "trading_seconds", "true_value")
 
 
 def export_zip(exchange):

@@ -29,6 +29,8 @@ from .events import (
     StartingEquitySet,
     TradeExecuted,
     TradeOrTightenCancelled,
+    TradingTimeAdded,
+    TradingTimeUp,
     TraderJoined,
     TraderKicked,
     TraderRenamed,

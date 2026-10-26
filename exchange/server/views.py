@@ -64,6 +64,11 @@ def market_view(exchange, market_id, depth=BOOK_DEPTH):
         "tick_size": market.config.tick_size,
         "max_position": market.config.max_position,
         "dollars_per_point": market.config.dollars_per_point,
+        # The trading timer: seconds left (paused while halted), None with no clock running;
+        # time_up once it ran out or the admin ended trading. (Never the true value: Q222.)
+        "trading_seconds": market.config.trading_seconds,
+        "trading_seconds_left": exchange.trading_seconds_left(market_id),
+        "time_up": market.time_up,
         "min_price": market.config.min_price,  # price limits: None = no limit
         "max_price": market.config.max_price,
         "status": market.status.value,
@@ -352,6 +357,7 @@ def admin_message(room):
                 **market_view(exchange, market_id),
                 "forced_trade_size": market.config.forced_trade_size,
                 "forced_trade_seconds": market.config.forced_trade_seconds,
+                "true_value": market.config.true_value,  # admin-only (Q222)
                 "choices": choice_counts(exchange, market),
             }
             for market_id, market in exchange.markets.items()

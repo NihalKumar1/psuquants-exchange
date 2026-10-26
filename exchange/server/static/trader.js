@@ -62,10 +62,12 @@ function handle(message) {
     // order the trades happened (trade ids count up across every market).
     tape = Object.values(message.tape).flat().sort((a, b) => a.trade_id - b.trade_id);
     setCountdowns(state.markets);
+    setTradingClocks(state.markets);
     render();
   } else if (message.type === "update") {
     state = message;
     setCountdowns(state.markets);
+    setTradingClocks(state.markets);
     freshTradeIds = new Set(message.new_trades.map((trade) => trade.trade_id));
     tape.push(...message.new_trades);
     render();
@@ -149,6 +151,7 @@ function renderColumn(column, market, mine) {
     `  ·  ${perPoint(market.dollars_per_point)}` + priceRangeText(market);
   part(column, "market-info").textContent = info;
   part(column, "market-info").title = info + "  ·  Click the best bid or offer to trade";
+  renderTradingClock(part(column, "trading-clock"), market);
   for (const name of ["buy-price", "sell-price", "quote-bid", "quote-ask", "width-input", "mm-bid", "mm-ask"]) {
     part(column, name).step = market.tick_size;
   }
@@ -166,6 +169,20 @@ function renderColumn(column, market, mine) {
 
   renderBook(column, market);
   renderMyNumbers(column, mine);
+}
+
+function renderTradingClock(clock, market) {
+  // The time left to trade (counting down; paused while halted), or "Time's up".
+  clock.hidden = market.trading_seconds_left === null && !market.time_up;
+  clock.classList.toggle("done", market.time_up);
+  if (market.time_up) {
+    delete clock.dataset.tradingClock;
+    clock.textContent = "Time's up";
+  } else if (market.trading_seconds_left !== null) {
+    clock.dataset.tradingClock = market.market_id;
+    clock.textContent = tradingClockText(market.market_id);
+  }
+  clock.title = "Trading time left: when it runs out, the market stops trading";
 }
 
 function priceRangeText(market) {
